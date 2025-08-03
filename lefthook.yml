@@ -1,0 +1,39 @@
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      files: git diff --name-only --cached --diff-filter=d
+      glob: "*.{js,jsx,ts,tsx,json,md,yml,yaml}"
+      run: pnpm biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {files}
+    
+    lint:
+      files: git diff --name-only --cached --diff-filter=d
+      glob: "*.{js,jsx,ts,tsx}"
+      run: pnpm biome lint --no-errors-on-unmatched --files-ignore-unknown=true {files}
+    
+    type-check:
+      files: git diff --name-only --cached --diff-filter=d
+      glob: "*.{ts,tsx}"
+      run: pnpm turbo type-check --filter=[HEAD^1]
+
+commit-msg:
+  commands:
+    validate:
+      run: |
+        # Commit message validation
+        commit_regex='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?: .{1,72}$'
+        if ! grep -qE "$commit_regex" "$1"; then
+          echo "Invalid commit message format!"
+          echo "Format: <type>(<scope>): <subject>"
+          echo "Example: feat(auth): add login functionality"
+          exit 1
+        fi
+
+pre-push:
+  parallel: true
+  commands:
+    test:
+      run: pnpm test
+    
+    build:
+      run: pnpm build

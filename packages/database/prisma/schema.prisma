@@ -1,0 +1,343 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator zod {
+  provider                  = "zod-prisma-types"
+  output                    = "../src/generated/zod"
+  createInputTypes          = true
+  createModelTypes          = true
+  addInputTypeValidation    = true
+  addIncludeType            = true
+  addSelectType             = true
+  validateWhereUniqueInput  = true
+  createOptionalDefaultValuesTypes = true
+  createRelationValuesTypes = true
+  createPartialTypes        = true
+  useDefaultValidators      = true
+  coerceDate                = true
+  writeNullishInModelTypes  = true
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum OrganizationPrivacy {
+  PUBLIC
+  PRIVATE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum InventoryCategory {
+  FOOD
+  DAILY_GOODS
+  MEDICINE
+  OTHER
+}
+
+enum ExpiryType {
+  EXPIRY
+  BEST_BEFORE
+  BOTH
+}
+
+enum ConsumptionReason {
+  USED
+  EXPIRED
+  DAMAGED
+  DONATED
+  OTHER
+}
+
+enum ActivityAction {
+  USER_REGISTERED
+  USER_LOGGED_IN
+  USER_LOGGED_OUT
+  USER_UPDATED_PROFILE
+  ORG_CREATED
+  ORG_UPDATED
+  ORG_DELETED
+  MEMBER_INVITED
+  MEMBER_JOINED
+  MEMBER_ROLE_CHANGED
+  MEMBER_REMOVED
+  ITEM_CREATED
+  ITEM_UPDATED
+  ITEM_DELETED
+  ITEM_CONSUMED
+  ITEM_RESTOCKED
+  EXPIRY_ALERT_SENT
+  LOW_STOCK_ALERT_SENT
+}
+
+enum Currency {
+  JPY
+  USD
+  EUR
+}
+
+// Models
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  displayName      String
+  profileImage     String?
+  passwordHash     String?
+  isEmailVerified  Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  lastLoginAt      DateTime?
+  providers        AuthProvider[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  sessions               Session[]
+  memberships            OrganizationMember[]
+  createdOrganizations   Organization[]      @relation("CreatedOrganizations")
+  updatedOrganizations   Organization[]      @relation("UpdatedOrganizations")
+  createdInventoryItems  InventoryItem[]     @relation("CreatedInventoryItems")
+  updatedInventoryItems  InventoryItem[]     @relation("UpdatedInventoryItems")
+  consumptionLogs        ConsumptionLog[]
+  activityLogs           ActivityLog[]
+  sentInvitations        OrganizationInvitation[] @relation("SentInvitations")
+  passwordResetTokens    PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  token            String   @unique
+  refreshToken     String   @unique
+  expiresAt        DateTime
+  refreshExpiresAt DateTime
+  ipAddress        String?
+  userAgent        String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([refreshToken])
+  @@map("sessions")
+}
+
+model Organization {
+  id                  String              @id @default(cuid())
+  name                String
+  description         String?
+  privacy             OrganizationPrivacy @default(PRIVATE)
+  inviteCode          String?             @unique
+  inviteCodeExpiresAt DateTime?
+  settings            Json                @default("{}")
+  createdBy           String
+  updatedBy           String
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relations
+  creator         User                     @relation("CreatedOrganizations", fields: [createdBy], references: [id])
+  updater         User                     @relation("UpdatedOrganizations", fields: [updatedBy], references: [id])
+  members         OrganizationMember[]
+  invitations     OrganizationInvitation[]
+  inventoryItems  InventoryItem[]
+  consumptionLogs ConsumptionLog[]
+  activityLogs    ActivityLog[]
+
+  @@index([inviteCode])
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           UserRole @default(VIEWER)
+  joinedAt       DateTime @default(now())
+  invitedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model OrganizationInvitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  email          String
+  role           UserRole         @default(VIEWER)
+  status         InvitationStatus @default(PENDING)
+  invitedBy      String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User         @relation("SentInvitations", fields: [invitedBy], references: [id])
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([status])
+  @@map("organization_invitations")
+}
+
+model InventoryItem {
+  id               String            @id @default(cuid())
+  organizationId   String
+  name             String
+  brand            String?
+  category         InventoryCategory
+  quantity         Float
+  unit             String
+  minQuantity      Float?
+  expiryDate       DateTime?
+  bestBeforeDate   DateTime?
+  expiryType       ExpiryType
+  storageLocation  String?
+  price            Json?             // { amount: number, currency: Currency }
+  barcode          String?
+  asin             String?
+  productId        String?
+  tags             String[]
+  images           String[]
+  notes            String?
+  createdBy        String
+  updatedBy        String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  // Relations
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator         User             @relation("CreatedInventoryItems", fields: [createdBy], references: [id])
+  updater         User             @relation("UpdatedInventoryItems", fields: [updatedBy], references: [id])
+  consumptionLogs ConsumptionLog[]
+
+  @@index([organizationId])
+  @@index([category])
+  @@index([expiryDate])
+  @@index([bestBeforeDate])
+  @@index([barcode])
+  @@index([productId])
+  @@map("inventory_items")
+}
+
+model ConsumptionLog {
+  id             String            @id @default(cuid())
+  inventoryItemId String
+  organizationId String
+  quantity       Float
+  reason         ConsumptionReason
+  notes          String?
+  consumedAt     DateTime          @default(now())
+  consumedBy     String
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  // Relations
+  inventoryItem  InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User          @relation(fields: [consumedBy], references: [id])
+
+  @@index([inventoryItemId])
+  @@index([organizationId])
+  @@index([consumedAt])
+  @@map("consumption_logs")
+}
+
+model ActivityLog {
+  id             String         @id @default(cuid())
+  organizationId String
+  userId         String
+  action         ActivityAction
+  entityType     String
+  entityId       String
+  metadata       Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime       @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id         String    @id @default(cuid())
+  userId     String
+  token      String    @unique
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@map("email_verification_tokens")
+}
