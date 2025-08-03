@@ -11,29 +11,32 @@
 ```mermaid
 graph TB
     subgraph "クライアント層"
-        MA[モバイルアプリ<br/>React Native + tRPC]
-        WA[Web管理画面<br/>React + React Router<br/>+ React Query]
+        FLUTTER[Flutter モバイルアプリ<br/>gRPC Direct]
+        WEB[Web管理画面<br/>React + tRPC]
     end
     
-    subgraph "BFF・外部API層"
-        BFF[BFF<br/>Hono + tRPC]
+    subgraph "BFF層（Web管理画面専用）"
+        ADMIN_BFF[Admin BFF<br/>Hono + tRPC]
+    end
+    
+    subgraph "外部API層"
         EXT_API[外部向けAPI<br/>Hono + REST]
     end
     
     subgraph "マイクロサービス層"
-        AUTH_SVC[認証サービス<br/>NestJS + Auth.js/Keycloak]
-        INV_SVC[備蓄品サービス<br/>NestJS + tRPC]
-        ORG_SVC[組織管理サービス<br/>NestJS + tRPC]
-        NOTIFY_SVC[通知サービス<br/>NestJS + UnifiedPush]
-        FILE_SVC[ファイル管理サービス<br/>NestJS]
-        PRODUCT_SVC[商品情報サービス<br/>NestJS]
+        AUTH_SVC[認証サービス<br/>NestJS + gRPC + Auth.js/Keycloak]
+        INV_SVC[備蓄品サービス<br/>NestJS + gRPC]
+        ORG_SVC[組織管理サービス<br/>NestJS + gRPC]
+        NOTIFY_SVC[通知サービス<br/>NestJS + gRPC + UnifiedPush]
+        FILE_SVC[ファイル管理サービス<br/>NestJS + gRPC]
+        PRODUCT_SVC[商品情報サービス<br/>NestJS + gRPC]
     end
     
     subgraph "データ層"
         POSTGRES[(PostgreSQL<br/>メインDB)]
-        MONGO[(MongoDB<br/>ログ・分析)]
+        GRAFANA[(Grafana Stack<br/>ログ・監視)]
         VALKEY[(Valkey<br/>キャッシュ)]
-        S3[オブジェクトストレージ<br/>MinIO/AWS S3]
+        STORAGE[ファイルストレージ<br/>Railway Storage]
     end
     
     subgraph "メッセージング・キューイング"
@@ -46,60 +49,75 @@ graph TB
         UNIFIED_PUSH[UnifiedPush<br/>プッシュ通知]
     end
     
-    MA --> BFF
-    WA --> BFF
-    BFF --> AUTH_SVC
-    BFF --> INV_SVC
-    BFF --> ORG_SVC
-    BFF --> NOTIFY_SVC
-    BFF --> FILE_SVC
+    %% Flutter直接gRPC通信
+    FLUTTER --> AUTH_SVC
+    FLUTTER --> INV_SVC
+    FLUTTER --> ORG_SVC
+    FLUTTER --> NOTIFY_SVC
+    FLUTTER --> FILE_SVC
+    FLUTTER --> PRODUCT_SVC
     
+    %% Web管理画面はBFF経由
+    WEB --> ADMIN_BFF
+    ADMIN_BFF --> AUTH_SVC
+    ADMIN_BFF --> INV_SVC
+    ADMIN_BFF --> ORG_SVC
+    ADMIN_BFF --> NOTIFY_SVC
+    ADMIN_BFF --> FILE_SVC
+    
+    %% 外部API
     EXT_API --> AUTH_SVC
     EXT_API --> INV_SVC
     
+    %% データ層接続
     AUTH_SVC --> POSTGRES
     INV_SVC --> POSTGRES
     ORG_SVC --> POSTGRES
-    FILE_SVC --> S3
+    FILE_SVC --> STORAGE
     NOTIFY_SVC --> UNIFIED_PUSH
     PRODUCT_SVC --> BARCODE
     
+    %% キャッシュ
     INV_SVC --> VALKEY
     ORG_SVC --> VALKEY
     AUTH_SVC --> VALKEY
     
+    %% メッセージング
     INV_SVC --> PULSAR
     ORG_SVC --> PULSAR
     NOTIFY_SVC --> PULSAR
     
-    NOTIFY_SVC --> MONGO
-    AUTH_SVC --> MONGO
+    %% ログ・分析
+    NOTIFY_SVC --> GRAFANA
+    AUTH_SVC --> GRAFANA
 ```
 
 ### 技術スタック選択理由
 
 **フロントエンド:**
-- **React Native + Expo SDK + TypeScript**: クロスプラットフォーム開発効率、豊富なネイティブ機能、型安全性
+- **Flutter + Dart**: 高性能クロスプラットフォーム、ネイティブコンパイル、60fps UI、豊富なウィジェット
 - **React + Vite + React Router + React Query + TypeScript**: Web管理画面、高速ビルド、宣言的ルーティング、強力なキャッシュ機能
 - **TailwindCSS + shadcn/ui**: ユーティリティファースト、高品質コンポーネント、ダークモード対応
-- **Zustand + Immer**: 軽量状態管理、イミュータブル更新、TypeScript完全対応
-- **MSW (Mock Service Worker)**: API モック、開発・テスト環境支援
+- **Riverpod**: Flutter推奨状態管理、型安全、テスト容易性、リアクティブプログラミング
+- **MSW (Mock Service Worker)**: Web管理画面API モック、開発・テスト環境支援
 
 **BFF・API層:**
-- **Hono**: 軽量高速、Edge Runtime対応、Tyme対応、高速ビルド
-- **tRPC**: エンドツーエンド型安全性、優れた開発体験
+- **gRPC**: Flutter直接通信、高性能バイナリ通信、Protocol Buffers、型安全性、ストリーミング対応
+- **Hono**: Web管理画面専用BFF、軽量高速、Edge Runtime対応、高速ビルド
+- **tRPC**: Web管理画面専用、エンドツーエンド型安全性、優れた開発体験
 
 **マイクロサービス:**
-- **NestJS + TypeScript + SWC**: エンタープライズ級アーキテクチャ、高速ビルド、依存性注入
-- **モジュラー設計**: サービス間疎結合、独立デプロイ可能
+- **NestJS + TypeScript + SWC**: DDD/Clean Architecture対応、高速ビルド、依存性注入
+- **DDD (Domain Driven Design)**: ドメイン中心設計、ビジネスロジックの分離
+- **Clean Architecture**: 依存関係の逆転、レイヤー分離、テスタビリティ向上
 
 **認証:**
 - **Auth.js (NextAuth.js)**: 多様なプロバイダー対応、セキュア、オープンソース
 - **Keycloak**: エンタープライズ認証、OIDC/SAML対応、自己ホスト可能
 
 **データベース:**
-- **PostgreSQL + Prisma + Kysely**: ACID準拠、データ整合性保証、型安全なクエリ
-- **MongoDB**: ログ・分析データ、柔軟なスキーマ
+- **PostgreSQL + Prisma ORM**: ACID準拠、データ整合性保証、型安全なクエリ、統一されたデータアクセス
+- **Grafana Stack (Loki + Grafana)**: ログ集約・分析・可視化
 
 **キャッシュ・メッセージング:**
 - **Valkey**: Redis互換、オープンソース、高性能
@@ -122,92 +140,396 @@ graph TB
 
 ## コンポーネントとインターフェース
 
-### モバイルアプリ構成
+### Flutter モバイルアプリ構成
 
 ```
-src/
-├── components/           # 再利用可能コンポーネント
-│   ├── common/          # 共通UI部品
-│   ├── forms/           # フォーム関連
-│   └── lists/           # リスト表示
-├── screens/             # 画面コンポーネント
-│   ├── auth/            # 認証関連画面
-│   ├── inventory/       # 備蓄品管理画面
-│   ├── organization/    # 組織管理画面
-│   └── settings/        # 設定画面
-├── services/            # API通信・外部サービス
-├── store/               # 状態管理 (Redux Toolkit)
-├── utils/               # ユーティリティ関数
-└── navigation/          # ナビゲーション設定
+lib/
+├── core/                # コア機能
+│   ├── constants/       # 定数定義
+│   ├── errors/          # エラー処理
+│   ├── network/         # gRPC クライアント
+│   └── utils/           # ユーティリティ
+├── data/                # データ層
+│   ├── datasources/     # データソース（gRPC、ローカル）
+│   ├── models/          # データモデル
+│   └── repositories/    # リポジトリ実装
+├── domain/              # ドメイン層
+│   ├── entities/        # エンティティ
+│   ├── repositories/    # リポジトリインターフェース
+│   └── usecases/        # ユースケース
+├── presentation/        # プレゼンテーション層
+│   ├── pages/           # 画面
+│   ├── widgets/         # ウィジェット
+│   ├── providers/       # Riverpod プロバイダー
+│   └── theme/           # テーマ・スタイル
+└── generated/           # 自動生成ファイル
+    ├── grpc/            # gRPC 生成コード
+    └── l10n/            # 国際化
 ```
 
 ### API通信プロトコル選択
 
 #### プロトコル比較分析
 
-**tRPC (推奨選択)**
+**gRPC (モバイル推奨選択)**
+- **パフォーマンス**: Protocol Buffers、高速バイナリ通信、ストリーミング対応
+- **型安全性**: .protoファイルからの自動コード生成、コンパイル時型チェック
+- **効率性**: バイナリシリアライゼーション、HTTP/2多重化
+- **ストリーミング**: リアルタイム通知、大容量データ転送
+- **言語サポート**: Dart/Flutter完全対応
+
+**tRPC (Web管理画面推奨選択)**
 - **型安全性**: TypeScriptネイティブ、エンドツーエンド型安全性
 - **開発効率**: 自動型生成、優れたDX
-- **パフォーマンス**: HTTP/JSON、適度な軽量性
-- **エコシステム**: React Query統合、豊富なミドルウェア
+- **Web最適化**: HTTP/JSON、React Query統合
+- **エコシステム**: 豊富なミドルウェア、開発ツール
 
-**GraphQL**
-- **柔軟性**: クエリの柔軟性、Over/Under-fetching解決
-- **型安全性**: スキーマファースト、コード生成必要
-- **複雑性**: 学習コスト高、キャッシュ戦略複雑
-- **オーバーヘッド**: 小規模アプリには過剰
-
-**gRPC**
-- **パフォーマンス**: Protocol Buffers、高速バイナリ通信
-- **型安全性**: .protoファイルからの型生成
-- **制約**: ブラウザサポート限定、HTTP/2必須
-- **複雑性**: 設定・デバッグが複雑
-
-**REST API**
-- **シンプル性**: 理解しやすい、標準的
-- **型安全性**: 手動型定義、同期が困難
-- **柔軟性**: 低い、Over-fetching問題
-
-#### tRPC アーキテクチャ設計
+#### 最適化されたハイブリッドアーキテクチャ設計
 
 ```mermaid
 graph TB
     subgraph "クライアント層"
-        RN[React Native App]
-        WEB[Web Admin]
+        FLUTTER[Flutter App<br/>Direct gRPC]
+        WEB[Web Admin<br/>tRPC Client]
     end
     
-    subgraph "tRPC層"
-        ROUTER[tRPC Router]
-        MIDDLEWARE[Middleware]
-        CONTEXT[Context]
+    subgraph "BFF層（Web専用）"
+        ADMIN_BFF[Admin BFF<br/>Hono + tRPC]
     end
     
-    subgraph "サービス層"
-        AUTH_SVC[Auth Service]
-        INV_SVC[Inventory Service]
-        ORG_SVC[Organization Service]
+    subgraph "gRPCサービス層"
+        AUTH_GRPC[Auth Service<br/>gRPC Server]
+        INV_GRPC[Inventory Service<br/>gRPC Server]
+        ORG_GRPC[Organization Service<br/>gRPC Server]
+        FILE_GRPC[File Service<br/>gRPC Server]
     end
     
     subgraph "データ層"
-        DB[(MongoDB)]
-        CACHE[(Redis)]
+        POSTGRES[(PostgreSQL)]
+        GRAFANA[(Grafana Stack)]
+        VALKEY[(Valkey)]
     end
     
-    RN --> ROUTER
-    WEB --> ROUTER
-    ROUTER --> MIDDLEWARE
-    MIDDLEWARE --> CONTEXT
-    CONTEXT --> AUTH_SVC
-    CONTEXT --> INV_SVC
-    CONTEXT --> ORG_SVC
-    AUTH_SVC --> DB
-    INV_SVC --> DB
-    ORG_SVC --> DB
-    INV_SVC --> CACHE
+    %% Flutter直接通信（高性能）
+    FLUTTER -.->|"Direct gRPC<br/>高性能・低レイテンシ"| AUTH_GRPC
+    FLUTTER -.->|"Direct gRPC"| INV_GRPC
+    FLUTTER -.->|"Direct gRPC"| ORG_GRPC
+    FLUTTER -.->|"Direct gRPC"| FILE_GRPC
+    
+    %% Web管理画面（開発効率重視）
+    WEB -->|"tRPC<br/>型安全・開発効率"| ADMIN_BFF
+    ADMIN_BFF --> AUTH_GRPC
+    ADMIN_BFF --> INV_GRPC
+    ADMIN_BFF --> ORG_GRPC
+    ADMIN_BFF --> FILE_GRPC
+    
+    %% データ層
+    AUTH_GRPC --> POSTGRES
+    INV_GRPC --> POSTGRES
+    ORG_GRPC --> POSTGRES
+    INV_GRPC --> VALKEY
+    AUTH_GRPC --> GRAFANA
 ```
 
-#### tRPC ルーター定義
+#### Protocol Buffers 定義
+
+**共通型定義 (proto/common.proto)**
+```protobuf
+syntax = "proto3";
+
+package inventory.common;
+
+option dart_package = "inventory_grpc";
+
+// 共通メッセージ
+message Empty {}
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message Money {
+  double amount = 1;
+  Currency currency = 2;
+}
+
+enum Currency {
+  CURRENCY_UNSPECIFIED = 0;
+  JPY = 1;
+  USD = 2;
+  EUR = 3;
+}
+
+enum InventoryCategory {
+  CATEGORY_UNSPECIFIED = 0;
+  FOOD = 1;
+  DAILY_GOODS = 2;
+  MEDICINE = 3;
+  OTHER = 4;
+}
+
+enum ExpiryType {
+  EXPIRY_TYPE_UNSPECIFIED = 0;
+  EXPIRY = 1;        // 消費期限
+  BEST_BEFORE = 2;   // 賞味期限
+  BOTH = 3;          // 両方
+}
+
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  ADMIN = 1;
+  EDITOR = 2;
+  VIEWER = 3;
+}
+
+// ページネーション
+message PageRequest {
+  int32 page = 1;
+  int32 limit = 2;
+}
+
+message PageResponse {
+  int32 page = 1;
+  int32 limit = 2;
+  int64 total = 3;
+  bool has_next = 4;
+  bool has_prev = 5;
+}
+```
+
+**認証サービス (proto/auth.proto)**
+```protobuf
+syntax = "proto3";
+
+package inventory.auth;
+
+import "common.proto";
+
+option dart_package = "inventory_grpc";
+
+service AuthService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (common.Empty);
+  rpc ResetPassword(ResetPasswordRequest) returns (common.Empty);
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string display_name = 3;
+  string profile_image = 4;
+  bool is_active = 5;
+  common.Timestamp created_at = 6;
+  common.Timestamp updated_at = 7;
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  string display_name = 3;
+}
+
+message RegisterResponse {
+  User user = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 expires_in = 4;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  User user = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 expires_in = 4;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message ResetPasswordRequest {
+  string email = 1;
+}
+```
+
+**備蓄品サービス (proto/inventory.proto)**
+```protobuf
+syntax = "proto3";
+
+package inventory.inventory;
+
+import "common.proto";
+
+option dart_package = "inventory_grpc";
+
+service InventoryService {
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  rpc GetItem(GetItemRequest) returns (InventoryItem);
+  rpc CreateItem(CreateItemRequest) returns (InventoryItem);
+  rpc UpdateItem(UpdateItemRequest) returns (InventoryItem);
+  rpc DeleteItem(DeleteItemRequest) returns (common.Empty);
+  rpc ConsumeItem(ConsumeItemRequest) returns (ConsumeItemResponse);
+  rpc SearchItems(SearchItemsRequest) returns (SearchItemsResponse);
+  rpc GetExpiringItems(GetExpiringItemsRequest) returns (GetExpiringItemsResponse);
+  rpc GetLowStockItems(GetLowStockItemsRequest) returns (GetLowStockItemsResponse);
+}
+
+message InventoryItem {
+  string id = 1;
+  string organization_id = 2;
+  string name = 3;
+  string brand = 4;
+  common.InventoryCategory category = 5;
+  double quantity = 6;
+  string unit = 7;
+  double min_quantity = 8;
+  common.Timestamp expiry_date = 9;
+  common.Timestamp best_before_date = 10;
+  common.ExpiryType expiry_type = 11;
+  string storage_location = 12;
+  common.Money price = 13;
+  string barcode = 14;
+  string asin = 15;
+  repeated string tags = 16;
+  repeated string images = 17;
+  string notes = 18;
+  string created_by = 19;
+  string updated_by = 20;
+  common.Timestamp created_at = 21;
+  common.Timestamp updated_at = 22;
+}
+
+message ListItemsRequest {
+  string organization_id = 1;
+  common.PageRequest page = 2;
+}
+
+message ListItemsResponse {
+  repeated InventoryItem items = 1;
+  common.PageResponse page = 2;
+}
+
+message CreateItemRequest {
+  string organization_id = 1;
+  string name = 2;
+  string brand = 3;
+  common.InventoryCategory category = 4;
+  double quantity = 5;
+  string unit = 6;
+  double min_quantity = 7;
+  common.Timestamp expiry_date = 8;
+  common.Timestamp best_before_date = 9;
+  common.ExpiryType expiry_type = 10;
+  string storage_location = 11;
+  common.Money price = 12;
+  string barcode = 13;
+  string asin = 14;
+  repeated string tags = 15;
+  string notes = 16;
+}
+
+message UpdateItemRequest {
+  string id = 1;
+  string organization_id = 2;
+  // 更新可能なフィールド（optional）
+  optional string name = 3;
+  optional string brand = 4;
+  optional common.InventoryCategory category = 5;
+  optional double quantity = 6;
+  optional string unit = 7;
+  optional double min_quantity = 8;
+  optional common.Timestamp expiry_date = 9;
+  optional common.Timestamp best_before_date = 10;
+  optional common.ExpiryType expiry_type = 11;
+  optional string storage_location = 12;
+  optional common.Money price = 13;
+  optional string barcode = 14;
+  optional string asin = 15;
+  repeated string tags = 16;
+  optional string notes = 17;
+}
+
+message DeleteItemRequest {
+  string id = 1;
+  string organization_id = 2;
+}
+
+message GetItemRequest {
+  string id = 1;
+  string organization_id = 2;
+}
+
+message ConsumeItemRequest {
+  string item_id = 1;
+  string organization_id = 2;
+  double quantity = 3;
+  string reason = 4;
+}
+
+message ConsumeItemResponse {
+  InventoryItem item = 1;
+  double remaining_quantity = 2;
+}
+
+message SearchItemsRequest {
+  string organization_id = 1;
+  string query = 2;
+  common.InventoryCategory category = 3;
+  string storage_location = 4;
+  repeated string tags = 5;
+  common.Timestamp expiry_date_from = 6;
+  common.Timestamp expiry_date_to = 7;
+  string sort_by = 8;
+  string sort_order = 9;
+  common.PageRequest page = 10;
+}
+
+message SearchItemsResponse {
+  repeated InventoryItem items = 1;
+  common.PageResponse page = 2;
+}
+
+message GetExpiringItemsRequest {
+  string organization_id = 1;
+  int32 days = 2;
+  common.PageRequest page = 3;
+}
+
+message GetExpiringItemsResponse {
+  repeated InventoryItem items = 1;
+  common.PageResponse page = 2;
+}
+
+message GetLowStockItemsRequest {
+  string organization_id = 1;
+  common.PageRequest page = 2;
+}
+
+message GetLowStockItemsResponse {
+  repeated InventoryItem items = 1;
+  common.PageResponse page = 2;
+}
+```
+
+#### tRPC ルーター定義（Web管理画面専用）
 
 **サーバーサイド (server/trpc/router.ts)**
 ```typescript
@@ -262,7 +584,7 @@ export const appRouter = router({
         displayName: z.string().min(1)
       }))
       .mutation(async ({ input, ctx }) => {
-        // Firebase認証 + ユーザー作成
+        // 認証サービス呼び出し + ユーザー作成
         const user = await ctx.authService.register(input);
         return { user, message: 'Registration successful' };
       }),
@@ -519,9 +841,355 @@ export const appRouter = router({
 export type AppRouter = typeof appRouter;
 ```
 
-#### クライアントサイド統合
+#### Flutter gRPC クライアント統合
 
-**React Native クライアント (client/trpc.ts)**
+**gRPC クライアント設定 (lib/core/network/grpc_client.dart)**
+```dart
+import 'package:grpc/grpc.dart';
+import 'package:inventory_grpc/inventory_grpc.dart';
+
+class GrpcClient {
+  static const String _host = 'api.inventory-app.com';
+  static const int _port = 443;
+  
+  late ClientChannel _channel;
+  late AuthServiceClient _authClient;
+  late InventoryServiceClient _inventoryClient;
+  late OrganizationServiceClient _organizationClient;
+  
+  // シングルトンパターン
+  static final GrpcClient _instance = GrpcClient._internal();
+  factory GrpcClient() => _instance;
+  GrpcClient._internal();
+  
+  Future<void> initialize() async {
+    _channel = ClientChannel(
+      _host,
+      port: _port,
+      options: const ChannelOptions(
+        credentials: ChannelCredentials.secure(),
+        keepAlive: ClientKeepAliveOptions(
+          keepAliveInterval: Duration(seconds: 30),
+          keepAliveTimeout: Duration(seconds: 5),
+          keepAliveWithoutCalls: true,
+        ),
+      ),
+    );
+    
+    _authClient = AuthServiceClient(_channel);
+    _inventoryClient = InventoryServiceClient(_channel);
+    _organizationClient = OrganizationServiceClient(_channel);
+  }
+  
+  // 認証付きコールオプション
+  CallOptions _getAuthCallOptions(String? token) {
+    if (token == null) return CallOptions();
+    
+    return CallOptions(
+      metadata: {'authorization': 'Bearer $token'},
+      timeout: const Duration(seconds: 30),
+    );
+  }
+  
+  // 認証サービス
+  AuthServiceClient get auth => _authClient;
+  
+  // 備蓄品サービス（認証付き）
+  InventoryServiceClient inventoryWithAuth(String token) {
+    return InventoryServiceClient(
+      _channel,
+      options: _getAuthCallOptions(token),
+    );
+  }
+  
+  // 組織サービス（認証付き）
+  OrganizationServiceClient organizationWithAuth(String token) {
+    return OrganizationServiceClient(
+      _channel,
+      options: _getAuthCallOptions(token),
+    );
+  }
+  
+  Future<void> dispose() async {
+    await _channel.shutdown();
+  }
+}
+```
+
+**リポジトリ実装例 (lib/data/repositories/inventory_repository_impl.dart)**
+```dart
+import 'package:inventory_grpc/inventory_grpc.dart';
+import '../../core/network/grpc_client.dart';
+import '../../domain/entities/inventory_item.dart';
+import '../../domain/repositories/inventory_repository.dart';
+import '../models/inventory_item_model.dart';
+
+class InventoryRepositoryImpl implements InventoryRepository {
+  final GrpcClient _grpcClient;
+  final String _authToken;
+  
+  InventoryRepositoryImpl(this._grpcClient, this._authToken);
+  
+  @override
+  Future<List<InventoryItemEntity>> getItems(String organizationId) async {
+    try {
+      final request = ListItemsRequest()
+        ..organizationId = organizationId
+        ..page = (PageRequest()
+          ..page = 1
+          ..limit = 50);
+      
+      final response = await _grpcClient
+          .inventoryWithAuth(_authToken)
+          .listItems(request);
+      
+      return response.items
+          .map((item) => InventoryItemModel.fromGrpc(item).toEntity())
+          .toList();
+    } on GrpcError catch (e) {
+      throw _handleGrpcError(e);
+    }
+  }
+  
+  @override
+  Future<InventoryItemEntity> createItem(CreateInventoryItemRequest request) async {
+    try {
+      final grpcRequest = CreateItemRequest()
+        ..organizationId = request.organizationId
+        ..name = request.name
+        ..category = _mapCategory(request.category)
+        ..quantity = request.quantity
+        ..unit = request.unit
+        ..expiryType = _mapExpiryType(request.expiryType);
+      
+      if (request.expiryDate != null) {
+        grpcRequest.expiryDate = _mapTimestamp(request.expiryDate!);
+      }
+      
+      final response = await _grpcClient
+          .inventoryWithAuth(_authToken)
+          .createItem(grpcRequest);
+      
+      return InventoryItemModel.fromGrpc(response).toEntity();
+    } on GrpcError catch (e) {
+      throw _handleGrpcError(e);
+    }
+  }
+  
+  @override
+  Stream<List<InventoryItemEntity>> watchItems(String organizationId) async* {
+    // gRPC ストリーミングを使用したリアルタイム更新
+    // 実装は要件に応じて
+    yield* Stream.periodic(
+      const Duration(seconds: 30),
+      (_) => getItems(organizationId),
+    ).asyncMap((future) => future);
+  }
+  
+  // エラーハンドリング
+  Exception _handleGrpcError(GrpcError error) {
+    switch (error.code) {
+      case StatusCode.unauthenticated:
+        return UnauthorizedException(error.message);
+      case StatusCode.permissionDenied:
+        return ForbiddenException(error.message);
+      case StatusCode.notFound:
+        return NotFoundException(error.message);
+      case StatusCode.invalidArgument:
+        return ValidationException(error.message);
+      default:
+        return ServerException(error.message ?? 'Unknown error');
+    }
+  }
+  
+  // 型変換ヘルパー
+  InventoryCategory _mapCategory(InventoryItemCategory category) {
+    switch (category) {
+      case InventoryItemCategory.food:
+        return InventoryCategory.FOOD;
+      case InventoryItemCategory.dailyGoods:
+        return InventoryCategory.DAILY_GOODS;
+      case InventoryItemCategory.medicine:
+        return InventoryCategory.MEDICINE;
+      case InventoryItemCategory.other:
+        return InventoryCategory.OTHER;
+    }
+  }
+  
+  ExpiryType _mapExpiryType(InventoryItemExpiryType type) {
+    switch (type) {
+      case InventoryItemExpiryType.expiry:
+        return ExpiryType.EXPIRY;
+      case InventoryItemExpiryType.bestBefore:
+        return ExpiryType.BEST_BEFORE;
+      case InventoryItemExpiryType.both:
+        return ExpiryType.BOTH;
+    }
+  }
+  
+  Timestamp _mapTimestamp(DateTime dateTime) {
+    return Timestamp()
+      ..seconds = dateTime.millisecondsSinceEpoch ~/ 1000
+      ..nanos = (dateTime.millisecondsSinceEpoch % 1000) * 1000000;
+  }
+}
+```
+
+**Riverpod プロバイダー (lib/presentation/providers/inventory_provider.dart)**
+```dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../domain/entities/inventory_item.dart';
+import '../../domain/usecases/get_inventory_items.dart';
+import '../../domain/usecases/create_inventory_item.dart';
+
+// 備蓄品一覧プロバイダー
+final inventoryItemsProvider = FutureProvider.family<List<InventoryItemEntity>, String>(
+  (ref, organizationId) async {
+    final useCase = ref.read(getInventoryItemsUseCaseProvider);
+    return await useCase(organizationId);
+  },
+);
+
+// 備蓄品作成プロバイダー
+final createInventoryItemProvider = Provider<CreateInventoryItem>(
+  (ref) => ref.read(createInventoryItemUseCaseProvider),
+);
+
+// 選択された備蓄品プロバイダー
+final selectedInventoryItemProvider = StateProvider<InventoryItemEntity?>(
+  (ref) => null,
+);
+
+// 検索クエリプロバイダー
+final inventorySearchQueryProvider = StateProvider<String>(
+  (ref) => '',
+);
+
+// フィルタリングされた備蓄品プロバイダー
+final filteredInventoryItemsProvider = Provider<AsyncValue<List<InventoryItemEntity>>>(
+  (ref) {
+    final itemsAsync = ref.watch(inventoryItemsProvider('current_org_id'));
+    final searchQuery = ref.watch(inventorySearchQueryProvider);
+    
+    return itemsAsync.when(
+      data: (items) {
+        if (searchQuery.isEmpty) {
+          return AsyncValue.data(items);
+        }
+        
+        final filtered = items.where((item) =>
+          item.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          (item.brand?.toLowerCase().contains(searchQuery.toLowerCase()) ?? false)
+        ).toList();
+        
+        return AsyncValue.data(filtered);
+      },
+      loading: () => const AsyncValue.loading(),
+      error: (error, stack) => AsyncValue.error(error, stack),
+    );
+  },
+);
+```
+
+**Flutter ウィジェット使用例 (lib/presentation/pages/inventory_list_page.dart)**
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/inventory_provider.dart';
+import '../widgets/inventory_item_card.dart';
+
+class InventoryListPage extends ConsumerWidget {
+  const InventoryListPage({super.key});
+  
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final inventoryItemsAsync = ref.watch(filteredInventoryItemsProvider);
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('備蓄品一覧'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => _showSearchDialog(context, ref),
+          ),
+        ],
+      ),
+      body: inventoryItemsAsync.when(
+        data: (items) => ListView.builder(
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return InventoryItemCard(
+              item: item,
+              onTap: () => _navigateToDetail(context, item),
+              onConsume: () => _showConsumeDialog(context, ref, item),
+            );
+          },
+        ),
+        loading: () => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        error: (error, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('エラーが発生しました: $error'),
+              ElevatedButton(
+                onPressed: () => ref.refresh(inventoryItemsProvider('current_org_id')),
+                child: const Text('再試行'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _navigateToCreate(context),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+  
+  void _showSearchDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('検索'),
+        content: TextField(
+          onChanged: (value) {
+            ref.read(inventorySearchQueryProvider.notifier).state = value;
+          },
+          decoration: const InputDecoration(
+            hintText: '商品名またはブランド名を入力',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('閉じる'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void _navigateToDetail(BuildContext context, InventoryItemEntity item) {
+    // 詳細画面への遷移
+  }
+  
+  void _navigateToCreate(BuildContext context) {
+    // 作成画面への遷移
+  }
+  
+  void _showConsumeDialog(BuildContext context, WidgetRef ref, InventoryItemEntity item) {
+    // 消費ダイアログの表示
+  }
+}
+```
+
+#### Web管理画面 tRPC クライアント
+
+**React クライアント (client/trpc.ts)**
 ```typescript
 import { createTRPCReact } from '@trpc/react-query';
 import { createTRPCMsw } from 'msw-trpc';
@@ -550,51 +1218,6 @@ export const trpcClient = createTRPCClient<AppRouter>({
     }),
   ],
 });
-```
-
-**React Native コンポーネント使用例**
-```typescript
-import React from 'react';
-import { View, Text, Button } from 'react-native';
-import { trpc } from '../trpc';
-
-export const InventoryList: React.FC<{ organizationId: string }> = ({ organizationId }) => {
-  // 型安全なクエリ
-  const { data: items, isLoading, error } = trpc.inventory.list.useQuery({
-    organizationId
-  });
-
-  // 型安全なミューテーション
-  const createMutation = trpc.inventory.create.useMutation({
-    onSuccess: () => {
-      // キャッシュ無効化
-      trpc.inventory.list.invalidate({ organizationId });
-    }
-  });
-
-  const handleCreate = () => {
-    createMutation.mutate({
-      organizationId,
-      name: '新しい商品',
-      category: 'food',
-      quantity: 1,
-      unit: '個',
-      expiryType: 'bestBefore'
-    });
-  };
-
-  if (isLoading) return <Text>Loading...</Text>;
-  if (error) return <Text>Error: {error.message}</Text>;
-
-  return (
-    <View>
-      {items?.map(item => (
-        <Text key={item._id}>{item.name} - {item.quantity}{item.unit}</Text>
-      ))}
-      <Button title="商品追加" onPress={handleCreate} />
-    </View>
-  );
-};
 ```
 
 #### 型安全性の利点
@@ -760,7 +1383,7 @@ model ConsumptionLog {
   @@map("consumption_logs")
 }
 
-// 活動ログ (MongoDB用は別途定義)
+// 活動ログ
 model ActivityLog {
   id             String       @id @default(cuid())
   organizationId String
@@ -827,407 +1450,243 @@ enum ActivityAction {
 }
 ```
 
-### Kysely 型安全クエリ
+### Prisma Repository Pattern (DDD)
 
-**データベースアクセス層 (db/kysely.ts)**
+**ドメインリポジトリ実装 (infrastructure/persistence/prisma/)**
 ```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { DB } from './types'; // Prisma生成型
+// domain/entities/inventory-item.entity.ts
+export class InventoryItem {
+  constructor(
+    private readonly id: string,
+    private readonly organizationId: string,
+    private name: string,
+    private quantity: number,
+    private readonly expiryDate?: Date,
+    private readonly bestBeforeDate?: Date
+  ) {}
 
-const dialect = new PostgresDialect({
-  pool: new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 20,
-  }),
-});
-
-export const db = new Kysely<DB>({
-  dialect,
-  log: process.env.NODE_ENV === 'development' ? ['query'] : [],
-});
-
-// 型安全なクエリ例
-export class InventoryRepository {
-  async findByOrganization(organizationId: string) {
-    return await db
-      .selectFrom('inventory_items')
-      .selectAll()
-      .where('organizationId', '=', organizationId)
-      .where('quantity', '>', 0)
-      .orderBy('expiryDate', 'asc')
-      .execute();
+  public updateQuantity(newQuantity: number): void {
+    if (newQuantity < 0) {
+      throw new Error('Quantity cannot be negative');
+    }
+    this.quantity = newQuantity;
   }
 
-  async findExpiring(organizationId: string, days: number) {
+  public isExpiring(days: number): boolean {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + days);
+    
+    return (this.expiryDate && this.expiryDate <= futureDate) ||
+           (this.bestBeforeDate && this.bestBeforeDate <= futureDate);
+  }
+
+  // Getters
+  public getId(): string { return this.id; }
+  public getName(): string { return this.name; }
+  public getQuantity(): number { return this.quantity; }
+  public getOrganizationId(): string { return this.organizationId; }
+}
+
+// application/ports/inventory.repository.ts
+export interface InventoryRepository {
+  findByOrganization(organizationId: string): Promise<InventoryItem[]>;
+  findExpiring(organizationId: string, days: number): Promise<InventoryItem[]>;
+  save(item: InventoryItem): Promise<void>;
+  findById(id: string): Promise<InventoryItem | null>;
+}
+
+// infrastructure/persistence/prisma/inventory.repository.ts
+@Injectable()
+export class PrismaInventoryRepository implements InventoryRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findByOrganization(organizationId: string): Promise<InventoryItem[]> {
+    const items = await this.prisma.inventoryItem.findMany({
+      where: { 
+        organizationId,
+        quantity: { gt: 0 }
+      },
+      orderBy: { expiryDate: 'asc' }
+    });
+
+    return items.map(item => this.toDomain(item));
+  }
+
+  async findExpiring(organizationId: string, days: number): Promise<InventoryItem[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
 
-    return await db
-      .selectFrom('inventory_items')
-      .selectAll()
-      .where('organizationId', '=', organizationId)
-      .where((eb) => eb.or([
-        eb('expiryDate', '<=', futureDate),
-        eb('bestBeforeDate', '<=', futureDate)
-      ]))
-      .orderBy('expiryDate', 'asc')
-      .execute();
-  }
-
-  async searchItems(params: {
-    organizationId: string;
-    query?: string;
-    category?: string;
-    storageLocation?: string;
-    limit: number;
-    offset: number;
-  }) {
-    let query = db
-      .selectFrom('inventory_items')
-      .selectAll()
-      .where('organizationId', '=', params.organizationId);
-
-    if (params.query) {
-      query = query.where((eb) => eb.or([
-        eb('name', 'ilike', `%${params.query}%`),
-        eb('brand', 'ilike', `%${params.query}%`)
-      ]));
-    }
-
-    if (params.category) {
-      query = query.where('category', '=', params.category as any);
-    }
-
-    if (params.storageLocation) {
-      query = query.where('storageLocation', 'ilike', `%${params.storageLocation}%`);
-    }
-
-    
-
-### API 型定義 (shared/api-type
-      .execute();
-  }
-
-  async updateQuantity(id: string, quantity: number, updatedById: string) {
-    return await db
-      .updateTable('inventory_items')
-      .set({
-        quantity: quantity.toString(),
-        updatedById,
-        updatedAt: new Date()
-      })
-      .where('id', '=', id)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-}
-```
-
-### MongoDB ログ・分析データ
-
-**活動ログ・分析用 (MongoDB)**
-```typescript
-// MongoDB スキーマ (Mongoose)
-import { Schema, model } from 'mongoose';
-
-// 詳細活動ログ
-const DetailedActivityLogSchema = new Schema({
-  organizationId: { type: String, required: true, index: true },
-  userId: { type: String, required: true, index: true },
-  action: { type: String, required: true },
-  targetType: { type: String, required: true },
-  targetId: { type: String, required: true },
-  details: { type: Schema.Types.Mixed },
-  metadata: {
-    userAgent: String,
-    ipAddress: String,
-    sessionId: String,
-    deviceInfo: Schema.Types.Mixed
-  },
-  timestamp: { type: Date, default: Date.now, index: true }
-}, {
-  timeseries: {
-    timeField: 'timestamp',
-    metaField: 'organizationId',
-    granularity: 'hours'
-  }
-});
-
-// 使用統計
-const UsageStatsSchema = new Schema({
-  organizationId: { type: String, required: true },
-  date: { type: Date, required: true },
-  metrics: {
-    itemsAdded: { type: Number, default: 0 },
-    itemsConsumed: { type: Number, default: 0 },
-    itemsExpired: { type: Number, default: 0 },
-    activeUsers: { type: Number, default: 0 },
-    totalValue: { type: Number, default: 0 }
-  }
-}, {
-  index: { organizationId: 1, date: 1 }
-});
-
-export const DetailedActivityLog = model('DetailedActivityLog', DetailedActivityLogSchema);
-export const UsageStats = model('UsageStats', UsageStatsSchema);
-```s.ts)
-
-**リクエスト・レスポンス型**
-```typescript
-// 共通レスポンス型
-export interface ApiResponse<T> {
-  readonly success: boolean;
-  readonly data?: T;
-  readonly error?: ApiError;
-  readonly timestamp: string;
-}
-
-export interface ApiError {
-  readonly code: string;
-  readonly message: string;
-  readonly details?: Record<string, unknown>;
-}
-
-// ページネーション
-export interface PaginatedResponse<T> extends ApiResponse<T[]> {
-  readonly pagination: {
-    readonly page: number;
-    readonly limit: number;
-    readonly total: number;
-    readonly hasNext: boolean;
-    readonly hasPrev: boolean;
-  };
-}
-
-// 認証関連
-export interface LoginRequest {
-  readonly email: string;
-  readonly password: string;
-}
-
-export interface LoginResponse {
-  readonly user: User;
-  readonly accessToken: string;
-  readonly refreshToken: string;
-  readonly expiresIn: number;
-}
-
-// 備蓄品関連
-export interface CreateInventoryItemRequest {
-  readonly name: string;
-  readonly brand?: string;
-  readonly category: InventoryCategory;
-  readonly quantity: number;
-  readonly unit: string;
-  readonly minQuantity?: number;
-  readonly expiryDate?: string; // ISO date string
-  readonly bestBeforeDate?: string;
-  readonly expiryType: ExpiryType;
-  readonly storageLocation?: string;
-  readonly price?: Money;
-  readonly barcode?: string;
-  readonly asin?: string;
-  readonly tags?: readonly string[];
-  readonly notes?: string;
-}
-
-export interface UpdateInventoryItemRequest extends Partial<CreateInventoryItemRequest> {
-  readonly _id: InventoryItemId;
-}
-
-export interface ConsumeInventoryRequest {
-  readonly inventoryItemId: InventoryItemId;
-  readonly quantity: number;
-  readonly reason?: string;
-}
-
-// 検索・フィルタ
-export interface InventorySearchRequest {
-  readonly query?: string;
-  readonly category?: InventoryCategory;
-  readonly storageLocation?: string;
-  readonly expiryType?: ExpiryType;
-  readonly tags?: readonly string[];
-  readonly expiryDateFrom?: string;
-  readonly expiryDateTo?: string;
-  readonly page?: number;
-  readonly limit?: number;
-  readonly sortBy?: 'name' | 'expiryDate' | 'createdAt' | 'quantity';
-  readonly sortOrder?: 'asc' | 'desc';
-}
-```
-
-### Mongoose スキーマ型安全性
-
-**型安全なスキーマ定義**
-```typescript
-import { Schema, model, Document } from 'mongoose';
-import { User, Organization, InventoryItem } from '../shared/types';
-
-// Document型の拡張
-export interface UserDocument extends User, Document {}
-export interface OrganizationDocument extends Organization, Document {}
-export interface InventoryItemDocument extends InventoryItem, Document {}
-
-// スキーマ定義
-const UserSchema = new Schema<UserDocument>({
-  email: { type: String, required: true, unique: true },
-  displayName: { type: String, required: true },
-  firebaseUid: { type: String, required: true, unique: true },
-  profileImage: { type: String },
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
-
-const InventoryItemSchema = new Schema<InventoryItemDocument>({
-  organizationId: { type: Schema.Types.ObjectId, required: true, ref: 'Organization' },
-  name: { type: String, required: true },
-  brand: { type: String },
-  category: { 
-    type: String, 
-    required: true, 
-    enum: Object.values(InventoryCategory) 
-  },
-  quantity: { type: Number, required: true, min: 0 },
-  unit: { type: String, required: true },
-  minQuantity: { type: Number, min: 0 },
-  expiryDate: { type: Date },
-  bestBeforeDate: { type: Date },
-  expiryType: { 
-    type: String, 
-    required: true, 
-    enum: Object.values(ExpiryType) 
-  },
-  storageLocation: { type: String },
-  price: {
-    amount: { type: Number, min: 0 },
-    currency: { type: String, enum: ['JPY', 'USD', 'EUR'] }
-  },
-  barcode: { type: String },
-  asin: { type: String },
-  tags: [{ type: String }],
-  images: [{ type: String }],
-  notes: { type: String },
-  createdBy: { type: Schema.Types.ObjectId, required: true, ref: 'User' },
-  updatedBy: { type: Schema.Types.ObjectId, required: true, ref: 'User' }
-}, {
-  timestamps: true
-});
-
-// インデックス定義
-InventoryItemSchema.index({ organizationId: 1, name: 1 });
-InventoryItemSchema.index({ organizationId: 1, expiryDate: 1 });
-InventoryItemSchema.index({ organizationId: 1, category: 1 });
-InventoryItemSchema.index({ barcode: 1 });
-
-export const UserModel = model<UserDocument>('User', UserSchema);
-export const InventoryItemModel = model<InventoryItemDocument>('InventoryItem', InventoryItemSchema);
-```
-
-### API エンドポイント型安全性
-
-**Express + TypeScript 型安全なルーター**
-```typescript
-import { Request, Response } from 'express';
-import { CreateInventoryItemRequest, ApiResponse, InventoryItem } from '../shared/api-types';
-
-// 型安全なリクエストハンドラー
-export interface TypedRequest<T = {}> extends Request {
-  body: T;
-}
-
-export interface TypedResponse<T = {}> extends Response {
-  json(body: ApiResponse<T>): this;
-}
-
-// 備蓄品作成エンドポイント
-export const createInventoryItem = async (
-  req: TypedRequest<CreateInventoryItemRequest>,
-  res: TypedResponse<InventoryItem>
-): Promise<void> => {
-  try {
-    // リクエストボディは型安全
-    const { name, category, quantity, expiryType } = req.body;
-    
-    // バリデーション（コンパイル時に型チェック）
-    if (!name || !category || quantity < 0) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Invalid request data'
-        },
-        timestamp: new Date().toISOString()
-      });
-      return;
-    }
-
-    // データベース操作も型安全
-    const item = new InventoryItemModel({
-      ...req.body,
-      organizationId: req.user.organizationId,
-      createdBy: req.user.id,
-      updatedBy: req.user.id
-    });
-
-    await item.save();
-
-    // レスポンスも型安全
-    res.json({
-      success: true,
-      data: item.toObject(),
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'Internal server error'
+    const items = await this.prisma.inventoryItem.findMany({
+      where: {
+        organizationId,
+        OR: [
+          { expiryDate: { lte: futureDate } },
+          { bestBeforeDate: { lte: futureDate } }
+        ]
       },
-      timestamp: new Date().toISOString()
+      orderBy: { expiryDate: 'asc' }
     });
+
+    return items.map(item => this.toDomain(item));
   }
-};
-```
 
-### フロントエンド型安全性
-
-**React Native + TypeScript**
-```typescript
-import React from 'react';
-import { InventoryItem, CreateInventoryItemRequest } from '../shared/api-types';
-import { useCreateInventoryItem } from '../hooks/useInventoryApi';
-
-interface InventoryFormProps {
-  onSuccess: (item: InventoryItem) => void;
-}
-
-export const InventoryForm: React.FC<InventoryFormProps> = ({ onSuccess }) => {
-  const createMutation = useCreateInventoryItem();
-
-  const handleSubmit = (formData: CreateInventoryItemRequest) => {
-    // フォームデータは型安全
-    createMutation.mutate(formData, {
-      onSuccess: (response) => {
-        // レスポンスも型安全
-        if (response.success && response.data) {
-          onSuccess(response.data);
-        }
+  async save(item: InventoryItem): Promise<void> {
+    await this.prisma.inventoryItem.upsert({
+      where: { id: item.getId() },
+      update: {
+        name: item.getName(),
+        quantity: item.getQuantity(),
+        updatedAt: new Date()
+      },
+      create: {
+        id: item.getId(),
+        organizationId: item.getOrganizationId(),
+        name: item.getName(),
+        quantity: item.getQuantity(),
+        category: 'FOOD', // デフォルト値
+        unit: '個',
+        expiryType: 'BOTH',
+        createdById: 'system',
+        updatedById: 'system'
       }
     });
-  };
+  }
 
-  // JSX内でも型安全な補完が効く
-  return (
-    <View>
-      {/* フォームコンポーネント */}
-    </View>
-  );
+  async findById(id: string): Promise<InventoryItem | null> {
+    const item = await this.prisma.inventoryItem.findUnique({
+      where: { id }
+    });
+
+    return item ? this.toDomain(item) : null;
+  }
+
+  private toDomain(prismaItem: any): InventoryItem {
+    return new InventoryItem(
+      prismaItem.id,
+      prismaItem.organizationId,
+      prismaItem.name,
+      Number(prismaItem.quantity),
+      prismaItem.expiryDate,
+      prismaItem.bestBeforeDate
+    );
+  }
+}
+
+// application/use-cases/get-inventory-items.use-case.ts
+@Injectable()
+export class GetInventoryItemsUseCase {
+  constructor(
+    private readonly inventoryRepository: InventoryRepository
+  ) {}
+
+  async execute(organizationId: string): Promise<InventoryItem[]> {
+    return await this.inventoryRepository.findByOrganization(organizationId);
+  }
+}
+```
+
+### Grafana Stack ログ・分析データ
+
+**ログ設定 (Grafana Loki)**
+```typescript
+// infrastructure/logging/loki.config.ts
+export const lokiConfig = {
+  url: process.env.LOKI_URL || 'http://loki:3100',
+  labels: {
+    app: 'inventory-management',
+    environment: process.env.NODE_ENV || 'development',
+  },
+  batching: {
+    batchSize: 1000,
+    batchInterval: 5000, // 5秒
+  },
 };
+
+// infrastructure/logging/logger.service.ts
+import { Injectable } from '@nestjs/common';
+import { createLogger, format, transports } from 'winston';
+import LokiTransport from 'winston-loki';
+
+@Injectable()
+export class LoggerService {
+  private logger;
+
+  constructor() {
+    this.logger = createLogger({
+      format: format.combine(
+        format.timestamp(),
+        format.json(),
+      ),
+      transports: [
+        new LokiTransport({
+          host: lokiConfig.url,
+          labels: lokiConfig.labels,
+          json: true,
+          batching: true,
+          interval: lokiConfig.batching.batchInterval,
+          replaceTimestamp: true,
+        }),
+        new transports.Console({
+          format: format.combine(
+            format.colorize(),
+            format.simple(),
+          ),
+        }),
+      ],
+    });
+  }
+
+  log(level: string, message: string, metadata?: any) {
+    this.logger.log(level, message, metadata);
+  }
+
+  error(message: string, trace?: string, metadata?: any) {
+    this.logger.error(message, { trace, ...metadata });
+  }
+
+  warn(message: string, metadata?: any) {
+    this.logger.warn(message, metadata);
+  }
+
+  info(message: string, metadata?: any) {
+    this.logger.info(message, metadata);
+  }
+
+  debug(message: string, metadata?: any) {
+    this.logger.debug(message, metadata);
+  }
+}
+
+// 使用例
+@Injectable()
+export class InventoryService {
+  constructor(private readonly logger: LoggerService) {}
+
+  async createItem(data: CreateInventoryItemDto): Promise<InventoryItem> {
+    this.logger.info('Creating inventory item', {
+      organizationId: data.organizationId,
+      itemName: data.name,
+      userId: data.createdBy,
+    });
+
+    try {
+      const item = await this.repository.create(data);
+      
+      this.logger.info('Inventory item created successfully', {
+        itemId: item.id,
+        organizationId: item.organizationId,
+      });
+
+      return item;
+    } catch (error) {
+      this.logger.error('Failed to create inventory item', error.stack, {
+        organizationId: data.organizationId,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+}
 ```
 
 ## エラーハンドリング
@@ -1255,8 +1714,8 @@ export const InventoryForm: React.FC<InventoryFormProps> = ({ onSuccess }) => {
 3. **競合解決**: タイムスタンプベースの最新優先
 
 **ローカルストレージ:**
-- SQLite (React Native): オフラインデータ保存
-- Redux Persist: アプリ状態の永続化
+- Hive/SQLite (Flutter): オフラインデータ保存
+- SharedPreferences: アプリ状態の永続化
 
 ## テスト戦略
 
@@ -1268,8 +1727,8 @@ export const InventoryForm: React.FC<InventoryFormProps> = ({ onSuccess }) => {
 - バリデーション関数
 
 **Integration Tests (統合テスト)**
-- API エンドポt Naイントtive E2Eテスト
-- **Testcontainers**: PostgreSQL/MongoDB テスト環境
+- API エンドポイントテスト
+- **Testcontainers**: PostgreSQL/Valkey テスト環境
 - データベース操作
 - 外部サービス連携
 
@@ -1278,10 +1737,10 @@ export const InventoryForm: React.FC<InventoryFormProps> = ({ onSuccess }) => {
 - 認証・組織作成・備蓄品管理
 
 ### テストツール
-- **Jest**: JavaScript単体テスト
+- **Vitest**: 高速単体テスト
 - **Supertest**: API統合テスト
-- **Detox**: React Native E2Eテスト
-- **MongoDB Memory Server**: テスト用DB
+- **Stagehand**: Flutter E2Eテスト
+- **Testcontainers**: 統合テスト用コンテナ環境
 
 ### テストデータ管理
 - **Fixtures**: 標準テストデータセット
@@ -1301,18 +1760,18 @@ export const InventoryForm: React.FC<InventoryFormProps> = ({ onSuccess }) => {
 ```mermaid
 sequenceDiagram
     participant C as クライアント
-    participant F as Firebase Auth
-    participant A as API Server
+    participant A as Auth Service
+    participant API as API Server
     participant D as Database
     
-    C->>F: ログイン (email/password)
-    F->>C: Firebase ID Token (短期間有効)
-    C->>A: API Request + ID Token
-    A->>F: Token検証
-    F->>A: ユーザー情報 + 検証結果
-    A->>D: 認可チェック + データアクセス
-    D->>A: データ
-    A->>C: 暗号化レスポンス
+    C->>A: ログイン (email/password)
+    A->>C: JWT Token (短期間有効)
+    C->>API: API Request + JWT Token
+    API->>A: Token検証
+    A->>API: ユーザー情報 + 検証結果
+    API->>D: 認可チェック + データアクセス
+    D->>API: データ
+    API->>C: 暗号化レスポンス
 ```
 
 **トークン管理戦略**
@@ -1324,7 +1783,7 @@ sequenceDiagram
 ### 認証・認可
 
 **多層認証システム**
-1. **Firebase Authentication**: 初期認証
+1. **Auth.js/Keycloak**: 初期認証
 2. **Custom Claims**: 組織・権限情報をトークンに埋め込み
 3. **API Level Authorization**: エンドポイント毎の権限チェック
 4. **Resource Level Authorization**: データレベルでの所有権確認
@@ -1351,7 +1810,7 @@ sequenceDiagram
 **エンドツーエンド暗号化**
 - **AES-256-GCM**: 機密データの暗号化
 - **Key Derivation**: PBKDF2 + Salt でユーザー固有キー生成
-- **Key Management**: AWS KMS でマスターキー管理
+- **Key Management**: Railway Secrets でキー管理
 
 **データ分類と保護レベル**
 ```javascript
@@ -1378,7 +1837,7 @@ const DATA_CLASSIFICATION = {
 ```
 
 **入力検証・サニタイゼーション**
-- **Schema Validation**: Joi/Yup による厳密な入力検証
+- **Schema Validation**: Zod による厳密な入力検証
 - **SQL Injection 防止**: Parameterized Queries
 - **XSS 防止**: Content Security Policy + 入力エスケープ
 - **File Upload 検証**: ファイル形式・サイズ・内容検証
@@ -1481,12 +1940,12 @@ const DATA_RETENTION = {
 
 ### バックエンド最適化
 - **データベースインデックス**: 検索・ソート性能向上
-- **Redis キャッシュ**: 頻繁アクセスデータ
+- **Valkey キャッシュ**: 頻繁アクセスデータ
 - **CDN**: 画像配信最適化
 
 ### モニタリング
-- **APM**: アプリケーション性能監視
-- **ログ集約**: 構造化ログ、エラー追跡
+- **APM**: Jaeger + Prometheus によるアプリケーション性能監視
+- **ログ集約**: Grafana Stack による構造化ログ、エラー追跡
 - **メトリクス**: レスポンス時間、エラー率
 
 ## デプロイメント・インフラ
@@ -1495,29 +1954,27 @@ const DATA_RETENTION = {
 - **Docker**: 開発環境統一
 - **Docker Compose**: ローカル開発スタック
 
-### 本番環境 (AWS)
-- **ECS Fargate**: コンテナオーケストレーション
-- **Application Load Balancer**: 負荷分散
-- **RDS MongoDB**: マネージドデータベース
-- **S3**: 画像ストレージ
-- **CloudFront**: CDN
-- **Route 53**: DNS管理
+### 本番環境 (Railway)
+- **Railway Services**: コンテナデプロイメント
+- **Railway Database**: PostgreSQL マネージドサービス
+- **Railway Storage**: ファイルストレージ
+- **Railway Networking**: 負荷分散・DNS管理
 
 ### CI/CD パイプライン
 - **GitHub Actions**: 自動テスト・デプロイ
 - **Staging環境**: 本番前検証
 - **Blue-Green デプロイ**: ゼロダウンタイム更新
-## ビルドツ
-ール・モノレポ構成
+
+## ビルドツール・モノレポ構成
 
 ### Turborepo モノレポ構成
 
 ```
 inventory-app/
 ├── apps/
-│   ├── mobile/                 # React Native アプリ
+│   ├── mobile/                 # Flutter アプリ
 │   ├── web-admin/             # React 管理画面
-│   ├── bff/                   # Hono BFF
+│   ├── admin-bff/             # Hono Admin BFF
 │   ├── external-api/          # Hono 外部API
 │   └── services/
 │       ├── auth-service/      # NestJS 認証サービス
@@ -1690,7 +2147,7 @@ inventory-app/
         "noMisleadingCharacterClass": "error",
         "noPrototypeBuiltins": "error",
         "noRedeclare": "error",
-        "noShadotedNames": "error",
+        "noShadowedVariables": "error",
         "noUnsafeNegation": "error",
         "useGetterReturn": "error",
         "useValidTypeof": "error"
@@ -1794,85 +2251,61 @@ export default defineConfig({
 });
 ```
 
-**Expo + Metro (React Native)**
-```javascript
-// apps/mobile/metro.config.js
-const { getDefaultConfig } = require('expo/metro-config');
-const path = require('path');
+**Flutter設定**
+```yaml
+# apps/mobile/pubspec.yaml
+name: inventory_management_app
+description: 備蓄管理アプリケーション
 
-const config = getDefaultConfig(__dirname);
+publish_to: 'none'
 
-// モノレポ対応
-const projectRoot = __dirname;
-const workspaceRoot = path.resolve(projectRoot, '../..');
+version: 1.0.0+1
 
-config.watchFolders = [workspaceRoot];
-config.resolver.nodeModulesPaths = [
-  path.resolve(projectRoot, 'node_modules'),
-  path.resolve(workspaceRoot, 'node_modules'),
-];
+environment:
+  sdk: '>=3.0.0 <4.0.0'
 
-// Expo SDK対応
-config.resolver.assetExts.push('db', 'mp3', 'ttf', 'obj', 'png', 'jpg');
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Core
+  flutter_riverpod: ^2.4.0
+  freezed_annotation: ^2.4.0
+  json_annotation: ^4.8.0
+  
+  # gRPC
+  grpc: ^3.2.0
+  protobuf: ^3.1.0
+  
+  # Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.2.0
+  
+  # UI
+  flutter_hooks: ^0.20.0
+  cached_network_image: ^3.3.0
+  
+  # Utils
+  dio: ^5.3.0
+  image_picker: ^1.0.0
+  barcode_scan2: ^4.2.0
 
-module.exports = config;
-```
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  build_runner: ^2.4.0
+  freezed: ^2.4.0
+  json_serializable: ^6.7.0
+  flutter_lints: ^3.0.0
 
-**Expo設定**
-```json
-// apps/mobile/app.json
-{
-  "expo": {
-    "name": "備蓄管理アプリ",
-    "slug": "inventory-management-app",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "assetBundlePatterns": ["**/*"],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.inventoryapp.mobile",
-      "infoPlist": {
-        "NSCameraUsageDescription": "バーコードスキャンのためにカメラを使用します",
-        "NSPhotoLibraryUsageDescription": "商品画像の保存のために写真ライブラリにアクセスします"
-      }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
-      },
-      "package": "com.inventoryapp.mobile",
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
-      ]
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      "expo-camera",
-      "expo-barcode-scanner",
-      "expo-image-picker",
-      "expo-notifications",
-      "expo-secure-store",
-      "expo-sqlite"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "your-project-id"
-      }
-    }
-  }
-}
+flutter:
+  uses-material-design: true
+  
+  assets:
+    - assets/images/
+    - assets/icons/
 ```
 
 **SWC (NestJS サービス)**
@@ -1951,7 +2384,7 @@ export default defineConfig({
 ### 開発環境・CI/CD
 
 **開発環境**
-- **Docker Compose**: ローカル開発スタック（PostgreSQL, MongoDB, Valkey, Pulsar）
+- **Docker Compose**: ローカル開発スタック（PostgreSQL, Valkey, Pulsar）
 - **Turborepo**: 並列ビルド・テスト実行
 - **Hot Reload**: 全サービス対応
 
@@ -1969,21 +2402,21 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'npm'
+          cache: 'pnpm'
       
-      - run: npm ci
-      - run: npx turbo run build
-      - run: npx turbo run test
-      - run: npx turbo run lint
-      - run: npx turbo run type-check
+      - run: pnpm install
+      - run: pnpm turbo run build
+      - run: pnpm turbo run test
+      - run: pnpm turbo run lint
+      - run: pnpm turbo run type-check
 
   e2e:
     runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v3
-      - run: npm ci
-      - run: npx turbo run test:e2e
+      - run: pnpm install
+      - run: pnpm turbo run test:e2e
 ```
 
 ## デプロイメント・インフラ
@@ -1993,293 +2426,78 @@ jobs:
 - **Turborepo**: モノレポ管理・並列実行
 - **Testcontainers**: 統合テスト環境
 
-### 本番環境 (Kubernetes + GitOps)
+### 本番環境 (Railway)
 
-**Kubernetes クラスター構成**
-- **Kubernetes**: マイクロサービスオーケストレーション
-- **Istio**: サービスメッシュ、トラフィック管理、セキュリティ
-- **Cert-Manager**: 自動SSL証明書管理
-- **NGINX Ingress**: 外部トラフィック制御
-
-**GitOps with ArgoCD**
-```mermaid
-graph TB
-    subgraph "開発フロー"
-        DEV[開発者] --> GIT[Git Repository]
-        GIT --> CI[GitHub Actions CI]
-        CI --> REG[Container Registry]
-        CI --> GITOPS[GitOps Repository]
-    end
-    
-    subgraph "GitOps Repository"
-        HELM[Helm Charts]
-        KUSTOMIZE[Kustomization]
-        MANIFESTS[K8s Manifests]
-    end
-    
-    subgraph "Kubernetes Cluster"
-        ARGOCD[ArgoCD]
-        APPS[Applications]
-        SERVICES[Services]
-    end
-    
-    GITOPS --> ARGOCD
-    ARGOCD --> APPS
-    ARGOCD --> SERVICES
-    REG --> APPS
-```
-
-**ArgoCD アプリケーション構成**
+**Railway デプロイメント設定**
 ```yaml
-# gitops/applications/inventory-app.yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: inventory-app
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/org/inventory-app-gitops
-    targetRevision: HEAD
-    path: environments/production
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: inventory-app
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-    - CreateNamespace=true
-  revisionHistoryLimit: 10
-```
+# railway.yml
+version: 1
 
-**Helm Charts 構成**
-```yaml
-# gitops/helm/inventory-app/values.yaml
-global:
-  imageRegistry: ghcr.io/org/inventory-app
-  imageTag: "1.0.0"
-  
 services:
-  authService:
-    enabled: true
-    replicas: 3
-    image: auth-service
-    resources:
-      requests:
-        memory: "256Mi"
-        cpu: "250m"
-      limits:
-        memory: "512Mi"
-        cpu: "500m"
-    
-  inventoryService:
-    enabled: true
-    replicas: 3
-    image: inventory-service
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: "500m"
-      limits:
-        memory: "1Gi"
-        cpu: "1000m"
+  # BFF
+  admin-bff:
+    build:
+      dockerfile: ./apps/admin-bff/Dockerfile
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      path: /health
+      interval: 30s
 
-  bff:
-    enabled: true
-    replicas: 2
-    image: bff
-    resources:
-      requests:
-        memory: "256Mi"
-        cpu: "250m"
-      limits:
-        memory: "512Mi"
-        cpu: "500m"
+  # マイクロサービス
+  auth-service:
+    build:
+      dockerfile: ./apps/services/auth-service/Dockerfile
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - postgres
+      - valkey
 
-databases:
-  postgresql:
-    enabled: true
-    operator: cloudnative-pg
-    cluster:
-      instances: 3
-      storage: 100Gi
-      storageClass: fast-ssd
-    backup:
-      enabled: true
-      schedule: "0 2 * * *"
-      retention: "30d"
-  
-  mongodb:
-    enabled: true
-    operator: mongodb-community
-    replicas: 3
-    storage: 50Gi
-    
+  inventory-service:
+    build:
+      dockerfile: ./apps/services/inventory-service/Dockerfile
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - postgres
+      - valkey
+
+  # データベース
+  postgres:
+    image: postgres:16
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=inventory
+      - POSTGRES_USER=${{ secrets.DB_USER }}
+      - POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+  # キャッシュ
   valkey:
-    enabled: true
-    operator: valkey-operator
-    replicas: 3
-    memory: 2Gi
+    image: valkey/valkey:7
+    volumes:
+      - valkey_data:/data
 
-messaging:
-  pulsar:
-    enabled: true
-    operator: pulsar-operator
-    brokers: 3
-    bookkeepers: 3
-    storage: 100Gi
-
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-  hosts:
-    - host: api.inventory-app.com
-      paths:
-        - path: /
-          pathType: Prefix
-          service: bff
-    - host: admin.inventory-app.com
-      paths:
-        - path: /
-          pathType: Prefix
-          service: web-admin
-  tls:
-    - secretName: inventory-app-tls
-      hosts:
-        - api.inventory-app.com
-        - admin.inventory-app.com
-
-monitoring:
-  prometheus:
-    enabled: true
-  grafana:
-    enabled: true
-  jaeger:
-    enabled: true
-  
-security:
-  networkPolicies:
-    enabled: true
-  podSecurityStandards:
-    enforce: restricted
-  serviceAccounts:
-    create: true
-    annotations:
-      eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/inventory-app-role
-```
-
-**Kustomization 環境別設定**
-```yaml
-# gitops/environments/production/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  - ../../base
-
-helmCharts:
-  - name: inventory-app
-    repo: oci://ghcr.io/org/helm-charts
-    version: 1.0.0
-    releaseName: inventory-app
-    namespace: inventory-app
-    valuesFile: values.yaml
-
-patchesStrategicMerge:
-  - production-patches.yaml
-
-images:
-  - name: ghcr.io/org/inventory-app/auth-service
-    newTag: v1.2.3
-  - name: ghcr.io/org/inventory-app/inventory-service
-    newTag: v1.2.3
-  - name: ghcr.io/org/inventory-app/bff
-    newTag: v1.2.3
-
-configMapGenerator:
-  - name: app-config
-    files:
-      - config.yaml
-    options:
-      disableNameSuffixHash: true
-```
-
-### CI/CD パイプライン (GitOps統合)
-
-**GitHub Actions CI/CD**
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy
-on:
-  push:
-    branches: [main]
-    tags: ['v*']
-
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [auth-service, inventory-service, bff, web-admin]
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Build and Push
-        uses: docker/build-push-action@v4
-        with:
-          context: ./apps/${{ matrix.service }}
-          push: true
-          tags: |
-            ghcr.io/org/inventory-app/${{ matrix.service }}:${{ github.sha }}
-            ghcr.io/org/inventory-app/${{ matrix.service }}:latest
-
-  update-gitops:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout GitOps repo
-        uses: actions/checkout@v3
-        with:
-          repository: org/inventory-app-gitops
-          token: ${{ secrets.GITOPS_TOKEN }}
-          
-      - name: Update image tags
-        run: |
-          cd environments/production
-          kustomize edit set image \
-            ghcr.io/org/inventory-app/auth-service:${{ github.sha }} \
-            ghcr.io/org/inventory-app/inventory-service:${{ github.sha }} \
-            ghcr.io/org/inventory-app/bff:${{ github.sha }}
-            
-      - name: Commit and push
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add .
-          git commit -m "Update images to ${{ github.sha }}"
-          git push
+volumes:
+  postgres_data:
+  valkey_data:
 ```
 
 **デプロイメント戦略**
-- **Blue-Green デプロイ**: Istio VirtualService による段階的切り替え
-- **Canary デプロイ**: Flagger による自動カナリア分析
-- **Rollback**: ArgoCD による即座のロールバック機能
-- **Multi-Environment**: dev/staging/production 環境の自動同期
+- **Railway デプロイ**: 簡単設定による初期デプロイ
+- **Docker コンテナ**: 環境統一・ポータビリティ
+- **CI/CD パイプライン**: GitHub Actions による自動化
+- **環境分離**: development/staging/production の段階的デプロイ
 
 **監視・可観測性**
 - **Prometheus**: メトリクス収集
 - **Grafana**: ダッシュボード・アラート
 - **Jaeger**: 分散トレーシング
-- **Loki**: ログ集約
-- **ArgoCD Notifications**: デプロイメント通知
-## エラ
-ーハンドリング・型安全性強化
+- **Grafana Stack (Loki + Grafana)**: ログ集約・可視化
+- **Railway Notifications**: デプロイメント通知
+
+## エラーハンドリング・型安全性強化
 
 ### neverthrow による関数型エラーハンドリング
 
@@ -2530,93 +2748,7 @@ export type CreateInventoryItemRequest = Simplify<
 >;
 ```
 
-**型レベルバリデーション**
-```typescript
-// packages/shared-types/src/validation.ts
-import type { IsEqual, Except } from 'type-fest';
-
-// コンパイル時型チェック
-type AssertValidInventoryItem = IsEqual<
-  keyof InventoryItem,
-  '_id' | 'organizationId' | 'name' | 'brand' | 'category' | 'quantity' | 
-  'unit' | 'minQuantity' | 'expiryDate' | 'bestBeforeDate' | 'expiryType' |
-  'storageLocation' | 'price' | 'barcode' | 'asin' | 'tags' | 'images' | 
-  'notes' | 'createdBy' | 'updatedBy' | 'createdAt' | 'updatedAt'
->;
-
-// 型の整合性チェック（コンパイル時エラーで検出）
-const _typeCheck: AssertValidInventoryItem = true;
-
-// 条件付き型による動的型生成
-export type ApiResponse<T> = T extends readonly unknown[]
-  ? {
-      readonly success: true;
-      readonly data: T;
-      readonly pagination: PaginationInfo;
-      readonly timestamp: string;
-    }
-  : {
-      readonly success: true;
-      readonly data: T;
-      readonly timestamp: string;
-    };
-
-// ユニオン型からの型抽出
-export type ExtractErrorType<T extends AppError['type']> = Extract<AppError, { type: T }>;
-
-// 型安全なイベント定義
-export type DomainEvent = 
-  | InventoryItemCreatedEvent
-  | InventoryItemUpdatedEvent
-  | InventoryItemConsumedEvent
-  | OrganizationMemberInvitedEvent;
-
-export interface InventoryItemCreatedEvent {
-  readonly type: 'InventoryItemCreated';
-  readonly payload: {
-    readonly itemId: InventoryItemId;
-    readonly organizationId: OrganizationId;
-    readonly createdBy: UserId;
-    readonly item: ReadonlyInventoryItem;
-  };
-  readonly timestamp: Date;
-}
-```
-
-**フロントエンドでの型活用**
-```typescript
-// apps/web-admin/src/hooks/useInventoryMutation.ts
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateInventoryItemRequest, InventoryItem } from '@packages/shared-types';
-import type { AppResult } from '@packages/error-handling';
-import { trpc } from '../trpc';
-
-export const useCreateInventoryItem = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (
-      request: CreateInventoryItemRequest
-    ): Promise<InventoryItem> => {
-      const result = await trpc.inventory.create.mutate(request);
-      return result;
-    },
-    onSuccess: (data, variables) => {
-      // 型安全なキャッシュ更新
-      queryClient.setQueryData(
-        ['inventory', 'list', variables.organizationId],
-        (old: InventoryItem[] | undefined) => 
-          old ? [...old, data] : [data]
-      );
-    },
-    onError: (error) => {
-      // 型安全なエラーハンドリング
-      console.error('Failed to create inventory item:', error);
-    }
-  });
-};
-```## フ
-ロントエンド状態管理 (Zustand + Immer)
+## フロントエンド状態管理 (Zustand + Immer)
 
 ### 型安全なZustandストア設計
 
@@ -2624,7 +2756,6 @@ export const useCreateInventoryItem = () => {
 ```typescript
 // packages/state-management/src/types.ts
 import type { StateCreator } from 'zustand';
-import type { Immer } from 'immer';
 import type { 
   User, 
   Organization, 
@@ -2791,220 +2922,6 @@ export const useCurrentOrganization = () => useAuthStore((state) => {
 });
 ```
 
-**備蓄品ストア実装**
-```typescript
-// packages/state-management/src/inventory.store.ts
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
-import type { InventoryStore, ImmerStateCreator, InventoryFilters } from './types';
-import type { InventoryItem } from '@packages/shared-types';
-
-const createInventoryStore: ImmerStateCreator<InventoryStore> = (set, get) => ({
-  // 初期状態
-  items: {},
-  filteredItems: [],
-  searchQuery: '',
-  filters: {},
-  selectedItems: new Set(),
-  isLoading: false,
-  error: null,
-
-  // 備蓄品アクション
-  setItems: (items) => set((state) => {
-    state.items = items.reduce((acc, item) => {
-      acc[item._id] = item;
-      return acc;
-    }, {} as Record<string, InventoryItem>);
-    get().applyFilters();
-  }),
-
-  addItem: (item) => set((state) => {
-    state.items[item._id] = item;
-    get().applyFilters();
-  }),
-
-  updateItem: (id, updates) => set((state) => {
-    if (state.items[id]) {
-      Object.assign(state.items[id], updates);
-      get().applyFilters();
-    }
-  }),
-
-  removeItem: (id) => set((state) => {
-    delete state.items[id];
-    state.selectedItems.delete(id);
-    get().applyFilters();
-  }),
-
-  // 検索・フィルタリング
-  setSearchQuery: (query) => set((state) => {
-    state.searchQuery = query;
-    get().applyFilters();
-  }),
-
-  setFilters: (newFilters) => set((state) => {
-    state.filters = { ...state.filters, ...newFilters };
-    get().applyFilters();
-  }),
-
-  applyFilters: () => set((state) => {
-    const { items, searchQuery, filters } = get();
-    let filtered = Object.values(items);
-
-    // 検索クエリフィルタ
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(item =>
-        item.name.toLowerCase().includes(query) ||
-        item.brand?.toLowerCase().includes(query) ||
-        item.tags.some(tag => tag.toLowerCase().includes(query))
-      );
-    }
-
-    // カテゴリフィルタ
-    if (filters.category) {
-      filtered = filtered.filter(item => item.category === filters.category);
-    }
-
-    // 保管場所フィルタ
-    if (filters.storageLocation) {
-      filtered = filtered.filter(item => 
-        item.storageLocation === filters.storageLocation
-      );
-    }
-
-    // 期限タイプフィルタ
-    if (filters.expiryType) {
-      filtered = filtered.filter(item => item.expiryType === filters.expiryType);
-    }
-
-    // タグフィルタ
-    if (filters.tags && filters.tags.length > 0) {
-      filtered = filtered.filter(item =>
-        filters.tags!.some(tag => item.tags.includes(tag))
-      );
-    }
-
-    // 期限日フィルタ
-    if (filters.expiryDateFrom || filters.expiryDateTo) {
-      filtered = filtered.filter(item => {
-        const expiryDate = item.expiryDate || item.bestBeforeDate;
-        if (!expiryDate) return false;
-        
-        const date = new Date(expiryDate);
-        if (filters.expiryDateFrom && date < filters.expiryDateFrom) return false;
-        if (filters.expiryDateTo && date > filters.expiryDateTo) return false;
-        
-        return true;
-      });
-    }
-
-    state.filteredItems = filtered;
-  }),
-
-  // 選択管理
-  toggleItemSelection: (id) => set((state) => {
-    if (state.selectedItems.has(id)) {
-      state.selectedItems.delete(id);
-    } else {
-      state.selectedItems.add(id);
-    }
-  }),
-
-  clearSelection: () => set((state) => {
-    state.selectedItems.clear();
-  }),
-
-  // 共通アクション
-  setLoading: (loading) => set((state) => {
-    state.isLoading = loading;
-  }),
-
-  setError: (error) => set((state) => {
-    state.error = error;
-  }),
-
-  reset: () => set((state) => {
-    state.items = {};
-    state.filteredItems = [];
-    state.searchQuery = '';
-    state.filters = {};
-    state.selectedItems.clear();
-    state.isLoading = false;
-    state.error = null;
-  })
-});
-
-export const useInventoryStore = create<InventoryStore>()(
-  immer(createInventoryStore)
-);
-
-// セレクター関数
-export const useInventoryItems = () => useInventoryStore((state) => state.filteredItems);
-export const useInventoryFilters = () => useInventoryStore((state) => state.filters);
-export const useSelectedItems = () => useInventoryStore((state) => 
-  Array.from(state.selectedItems)
-);
-export const useInventoryStats = () => useInventoryStore((state) => {
-  const items = Object.values(state.items);
-  return {
-    total: items.length,
-    categories: [...new Set(items.map(item => item.category))].length,
-    expiringSoon: items.filter(item => {
-      const expiryDate = item.expiryDate || item.bestBeforeDate;
-      if (!expiryDate) return false;
-      const daysUntilExpiry = Math.ceil(
-        (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      );
-      return daysUntilExpiry <= 7;
-    }).length
-  };
-});
-```
-
-**React Nativeでの使用例**
-```typescript
-// apps/mobile/src/screens/InventoryListScreen.tsx
-import React, { useEffect } from 'react';
-import { View, FlatList, Text } from 'react-native';
-import { useInventoryStore, useInventoryItems, useInventoryStats } from '@packages/state-management';
-import { trpc } from '../trpc';
-
-export const InventoryListScreen: React.FC = () => {
-  const items = useInventoryItems();
-  const stats = useInventoryStats();
-  const { setItems, setLoading, setError } = useInventoryStore();
-
-  // tRPCクエリ
-  const { data, isLoading, error } = trpc.inventory.list.useQuery({
-    organizationId: 'current-org-id'
-  });
-
-  useEffect(() => {
-    setLoading(isLoading);
-    if (error) {
-      setError(error.message);
-    } else if (data) {
-      setItems(data);
-      setError(null);
-    }
-  }, [data, isLoading, error, setItems, setLoading, setError]);
-
-  return (
-    <View>
-      <Text>総数: {stats.total} | 期限切れ近: {stats.expiringSoon}</Text>
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item._id}
-        renderItem={({ item }) => (
-          <Text>{item.name} - {item.quantity}{item.unit}</Text>
-        )}
-      />
-    </View>
-  );
-};
-```
-
 **Web管理画面での使用例**
 ```typescript
 // apps/web-admin/src/components/InventoryTable.tsx
@@ -3057,2157 +2974,4 @@ export const InventoryTable: React.FC = () => {
     </div>
   );
 };
-```## 
-UI・デザインシステム (TailwindCSS + shadcn/ui)
-
-### TailwindCSS 設定
-
-**共通Tailwind設定**
-```typescript
-// packages/config/tailwind.config.js
-import type { Config } from 'tailwindcss';
-
-const config: Config = {
-  content: [
-    './apps/web-admin/src/**/*.{js,ts,jsx,tsx}',
-    './packages/ui-components/src/**/*.{js,ts,jsx,tsx}',
-  ],
-  darkMode: 'class',
-  theme: {
-    extend: {
-      colors: {
-        // ブランドカラー
-        brand: {
-          50: '#f0f9ff',
-          100: '#e0f2fe',
-          500: '#0ea5e9',
-          600: '#0284c7',
-          900: '#0c4a6e',
-        },
-        // セマンティックカラー
-        success: {
-          50: '#f0fdf4',
-          500: '#22c55e',
-          600: '#16a34a',
-        },
-        warning: {
-          50: '#fffbeb',
-          500: '#f59e0b',
-          600: '#d97706',
-        },
-        danger: {
-          50: '#fef2f2',
-          500: '#ef4444',
-          600: '#dc2626',
-        },
-        // 期限管理用カラー
-        expiry: {
-          safe: '#22c55e',      // 安全（緑）
-          warning: '#f59e0b',   // 注意（黄）
-          danger: '#ef4444',    // 危険（赤）
-          expired: '#991b1b',   // 期限切れ（濃い赤）
-        }
-      },
-      fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
-      },
-      animation: {
-        'fade-in': 'fadeIn 0.2s ease-in-out',
-        'slide-up': 'slideUp 0.3s ease-out',
-        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-      },
-      keyframes: {
-        fadeIn: {
-          '0%': { opacity: '0' },
-          '100%': { opacity: '1' },
-        },
-        slideUp: {
-          '0%': { transform: 'translateY(10px)', opacity: '0' },
-          '100%': { transform: 'translateY(0)', opacity: '1' },
-        },
-      },
-    },
-  },
-  plugins: [
-    require('@tailwindcss/forms'),
-    require('@tailwindcss/typography'),
-    require('tailwindcss-animate'),
-  ],
-};
-
-export default config;
-```
-
-### shadcn/ui コンポーネントライブラリ
-
-**共有UIコンポーネント構成**
-```typescript
-// packages/ui-components/src/index.ts
-export * from './components/ui/button';
-export * from './components/ui/input';
-export * from './components/ui/card';
-export * from './components/ui/table';
-export * from './components/ui/dialog';
-export * from './components/ui/toast';
-export * from './components/ui/badge';
-export * from './components/ui/select';
-export * from './components/ui/calendar';
-export * from './components/ui/form';
-
-// ビジネス固有コンポーネント
-export * from './components/inventory/inventory-card';
-export * from './components/inventory/expiry-badge';
-export * from './components/inventory/quantity-input';
-export * from './components/organization/member-avatar';
-export * from './components/common/loading-spinner';
-export * from './components/common/error-boundary';
-```
-
-**期限管理用バッジコンポーネント**
-```typescript
-// packages/ui-components/src/components/inventory/expiry-badge.tsx
-import React from 'react';
-import { Badge } from '../ui/badge';
-import { cn } from '../../lib/utils';
-import type { ExpiryType } from '@packages/shared-types';
-
-interface ExpiryBadgeProps {
-  expiryDate?: Date;
-  bestBeforeDate?: Date;
-  expiryType: ExpiryType;
-  className?: string;
-}
-
-export const ExpiryBadge: React.FC<ExpiryBadgeProps> = ({
-  expiryDate,
-  bestBeforeDate,
-  expiryType,
-  className
-}) => {
-  const getExpiryStatus = () => {
-    const now = new Date();
-    const targetDate = expiryType === 'expiry' ? expiryDate : bestBeforeDate;
-    
-    if (!targetDate) return { status: 'none', daysLeft: null };
-    
-    const daysLeft = Math.ceil((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (daysLeft < 0) return { status: 'expired', daysLeft };
-    if (daysLeft <= 3) return { status: 'danger', daysLeft };
-    if (daysLeft <= 7) return { status: 'warning', daysLeft };
-    if (daysLeft <= 30) return { status: 'caution', daysLeft };
-    
-    return { status: 'safe', daysLeft };
-  };
-
-  const { status, daysLeft } = getExpiryStatus();
-
-  const getVariant = () => {
-    switch (status) {
-      case 'expired': return 'destructive';
-      case 'danger': return 'destructive';
-      case 'warning': return 'secondary';
-      case 'caution': return 'outline';
-      case 'safe': return 'default';
-      default: return 'outline';
-    }
-  };
-
-  const getText = () => {
-    if (status === 'none') return '期限なし';
-    if (status === 'expired') return `期限切れ (${Math.abs(daysLeft!)}日経過)`;
-    return `残り${daysLeft}日`;
-  };
-
-  return (
-    <Badge 
-      variant={getVariant()}
-      className={cn(
-        'font-medium',
-        status === 'expired' && 'bg-expiry-expired text-white',
-        status === 'danger' && 'bg-expiry-danger text-white',
-        status === 'warning' && 'bg-expiry-warning text-white',
-        status === 'caution' && 'bg-yellow-100 text-yellow-800',
-        status === 'safe' && 'bg-expiry-safe text-white',
-        className
-      )}
-    >
-      {getText()}
-    </Badge>
-  );
-};
-```
-
-**備蓄品カードコンポーネント**
-```typescript
-// packages/ui-components/src/components/inventory/inventory-card.tsx
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { ExpiryBadge } from './expiry-badge';
-import { MoreHorizontal, Package, MapPin } from 'lucide-react';
-import type { InventoryItem } from '@packages/shared-types';
-
-interface InventoryCardProps {
-  item: InventoryItem;
-  onEdit?: (item: InventoryItem) => void;
-  onConsume?: (item: InventoryItem) => void;
-  onDelete?: (item: InventoryItem) => void;
-  className?: string;
-}
-
-export const InventoryCard: React.FC<InventoryCardProps> = ({
-  item,
-  onEdit,
-  onConsume,
-  onDelete,
-  className
-}) => {
-  return (
-    <Card className={className}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-lg font-semibold">
-              {item.name}
-            </CardTitle>
-            {item.brand && (
-              <p className="text-sm text-muted-foreground">{item.brand}</p>
-            )}
-          </div>
-          <Button variant="ghost" size="sm">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      
-      <CardContent className="space-y-4">
-        {/* 画像 */}
-        {item.images.length > 0 && (
-          <div className="aspect-video rounded-md overflow-hidden bg-muted">
-            <img
-              src={item.images[0]}
-              alt={item.name}
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
-
-        {/* 基本情報 */}
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-muted-foreground" />
-            <span>{item.quantity} {item.unit}</span>
-          </div>
-          {item.storageLocation && (
-            <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span>{item.storageLocation}</span>
-            </div>
-          )}
-        </div>
-
-        {/* 期限バッジ */}
-        <ExpiryBadge
-          expiryDate={item.expiryDate}
-          bestBeforeDate={item.bestBeforeDate}
-          expiryType={item.expiryType}
-        />
-
-        {/* カテゴリ・タグ */}
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary">{item.category}</Badge>
-          {item.tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="text-xs">
-              {tag}
-            </Badge>
-          ))}
-        </div>
-
-        {/* アクションボタン */}
-        <div className="flex gap-2 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onConsume?.(item)}
-            className="flex-1"
-          >
-            消費
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onEdit?.(item)}
-            className="flex-1"
-          >
-            編集
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-```
-
-## API モック (MSW)
-
-### MSW 設定・ハンドラー定義
-
-**共通モック設定**
-```typescript
-// packages/mocks/src/handlers/index.ts
-import { rest } from 'msw';
-import { authHandlers } from './auth.handlers';
-import { inventoryHandlers } from './inventory.handlers';
-import { organizationHandlers } from './organization.handlers';
-
-export const handlers = [
-  ...authHandlers,
-  ...inventoryHandlers,
-  ...organizationHandlers,
-];
-
-// tRPC用のMSWハンドラー
-import { createTRPCMsw } from 'msw-trpc';
-import type { AppRouter } from '@packages/trpc-router';
-
-export const trpcMsw = createTRPCMsw<AppRouter>();
-```
-
-**備蓄品API モック**
-```typescript
-// packages/mocks/src/handlers/inventory.handlers.ts
-import { trpcMsw } from './index';
-import { createInventoryItemId, createOrganizationId } from '@packages/shared-types';
-import type { InventoryItem, CreateInventoryItemRequest } from '@packages/shared-types';
-
-// モックデータ
-const mockInventoryItems: InventoryItem[] = [
-  {
-    _id: createInventoryItemId('item-1'),
-    organizationId: createOrganizationId('org-1'),
-    name: '醤油',
-    brand: 'キッコーマン',
-    category: 'food',
-    quantity: 2,
-    unit: '本',
-    minQuantity: 1,
-    expiryDate: new Date('2024-12-31'),
-    bestBeforeDate: new Date('2024-11-30'),
-    expiryType: 'both',
-    storageLocation: 'パントリー',
-    price: { amount: 300, currency: 'JPY' },
-    barcode: '4901515001234',
-    tags: ['調味料', '和食'],
-    images: ['https://example.com/soy-sauce.jpg'],
-    notes: '開封後は冷蔵保存',
-    createdBy: 'user-1' as any,
-    updatedBy: 'user-1' as any,
-    createdAt: new Date('2024-01-01'),
-    updatedAt: new Date('2024-01-01'),
-  },
-  // ... 他のモックデータ
-];
-
-export const inventoryHandlers = [
-  // 備蓄品一覧取得
-  trpcMsw.inventory.list.query((req, res, ctx) => {
-    const { organizationId } = req.input;
-    const items = mockInventoryItems.filter(
-      item => item.organizationId === organizationId
-    );
-    return res(ctx.data(items));
-  }),
-
-  // 備蓄品作成
-  trpcMsw.inventory.create.mutation((req, res, ctx) => {
-    const input = req.input as CreateInventoryItemRequest & { organizationId: string };
-    const newItem: InventoryItem = {
-      _id: createInventoryItemId(`item-${Date.now()}`),
-      ...input,
-      organizationId: input.organizationId as any,
-      createdBy: 'user-1' as any,
-      updatedBy: 'user-1' as any,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    mockInventoryItems.push(newItem);
-    return res(ctx.data(newItem));
-  }),
-
-  // 備蓄品検索
-  trpcMsw.inventory.search.query((req, res, ctx) => {
-    const { query, category, organizationId } = req.input;
-    let filtered = mockInventoryItems.filter(
-      item => item.organizationId === organizationId
-    );
-
-    if (query) {
-      filtered = filtered.filter(item =>
-        item.name.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-
-    if (category) {
-      filtered = filtered.filter(item => item.category === category);
-    }
-
-    return res(ctx.data({
-      items: filtered,
-      pagination: {
-        page: 1,
-        limit: 20,
-        total: filtered.length,
-        hasNext: false,
-        hasPrev: false,
-      }
-    }));
-  }),
-
-  // 期限切れ近商品
-  trpcMsw.inventory.getExpiring.query((req, res, ctx) => {
-    const { organizationId, days = 30 } = req.input;
-    const now = new Date();
-    const targetDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-
-    const expiring = mockInventoryItems.filter(item => {
-      if (item.organizationId !== organizationId) return false;
-      const expiryDate = item.expiryDate || item.bestBeforeDate;
-      return expiryDate && expiryDate <= targetDate;
-    });
-
-    return res(ctx.data(expiring));
-  }),
-];
-```
-
-**ブラウザ・Node.js セットアップ**
-```typescript
-// packages/mocks/src/browser.ts
-import { setupWorker } from 'msw';
-import { handlers } from './handlers';
-
-export const worker = setupWorker(...handlers);
-
-// apps/web-admin/src/main.tsx
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-
-// 開発環境でのみMSWを有効化
-if (import.meta.env.DEV) {
-  const { worker } = await import('@packages/mocks/browser');
-  await worker.start({
-    onUnhandledRequest: 'bypass',
-  });
-}
-
-ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
-```
-
-```typescript
-// packages/mocks/src/server.ts
-import { setupServer } from 'msw/node';
-import { handlers } from './handlers';
-
-export const server = setupServer(...handlers);
-
-// テストセットアップ
-// vitest.setup.ts
-import { beforeAll, afterEach, afterAll } from 'vitest';
-import { server } from '@packages/mocks/server';
-
-beforeAll(() => server.listen());
-afterEach(() => server.resetHandlers());
-afterAll(() => server.close());
-```
-
-**テストでの使用例**
-```typescript
-// apps/web-admin/src/components/__tests__/InventoryList.test.tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { InventoryList } from '../InventoryList';
-import { trpcMsw } from '@packages/mocks';
-
-describe('InventoryList', () => {
-  it('備蓄品一覧を表示する', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } }
-    });
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <InventoryList organizationId="org-1" />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText('醤油')).toBeInTheDocument();
-      expect(screen.getByText('キッコーマン')).toBeInTheDocument();
-    });
-  });
-
-  it('検索機能が動作する', async () => {
-    // MSWハンドラーをオーバーライド
-    trpcMsw.inventory.search.query((req, res, ctx) => {
-      return res(ctx.data({
-        items: [/* 検索結果 */],
-        pagination: { /* ... */ }
-      }));
-    });
-
-    // テスト実行...
-  });
-});
-```## E2Eテス
-ト (Stagehand)
-
-### AI駆動E2Eテスト設計
-
-**Stagehand テスト設定**
-```typescript
-// packages/e2e-tests/src/setup.ts
-import { Stagehand } from '@stagehand/sdk';
-import { beforeAll, afterAll } from 'vitest';
-
-let stagehand: Stagehand;
-
-beforeAll(async () => {
-  stagehand = new Stagehand({
-    env: 'test',
-    headless: true,
-    debugDom: true,
-  });
-  await stagehand.init();
-});
-
-afterAll(async () => {
-  await stagehand.close();
-});
-
-export { stagehand };
-```
-
-**自然言語テストシナリオ**
-```typescript
-// packages/e2e-tests/src/inventory-management.test.ts
-import { describe, it, expect } from 'vitest';
-import { stagehand } from './setup';
-
-describe('備蓄品管理フロー', () => {
-  it('ユーザーが備蓄品を登録から消費まで管理できる', async () => {
-    // ログイン
-    await stagehand.page.goto('http://localhost:3000/login');
-    await stagehand.act('メールアドレス "test@example.com" とパスワード "password123" でログインする');
-    
-    // 組織選択
-    await stagehand.act('家族組織 "田中家" を選択する');
-    
-    // 備蓄品追加
-    await stagehand.act('新しい備蓄品を追加ボタンをクリックする');
-    await stagehand.act('商品名に "醤油" を入力する');
-    await stagehand.act('ブランド名に "キッコーマン" を入力する');
-    await stagehand.act('カテゴリで "食品" を選択する');
-    await stagehand.act('数量に "2" を入力し、単位で "本" を選択する');
-    await stagehand.act('賞味期限を "2024年12月31日" に設定する');
-    await stagehand.act('保管場所に "パントリー" を入力する');
-    await stagehand.act('保存ボタンをクリックする');
-    
-    // 登録確認
-    await stagehand.assert('画面に "醤油" が表示されている');
-    await stagehand.assert('数量が "2本" と表示されている');
-    await stagehand.assert('保管場所が "パントリー" と表示されている');
-    
-    // 検索機能テスト
-    await stagehand.act('検索ボックスに "醤油" を入力する');
-    await stagehand.assert('検索結果に "醤油" のみが表示されている');
-    
-    // 消費記録
-    await stagehand.act('醤油の "消費" ボタンをクリックする');
-    await stagehand.act('消費数量に "1" を入力する');
-    await stagehand.act('消費理由に "料理で使用" を入力する');
-    await stagehand.act('消費を記録ボタンをクリックする');
-    
-    // 消費後確認
-    await stagehand.assert('醤油の数量が "1本" に更新されている');
-    
-    // 期限切れ近商品確認
-    await stagehand.act('期限切れ近商品タブをクリックする');
-    await stagehand.assert('期限が近い商品が適切に表示されている');
-  });
-
-  it('組織メンバーが活動を共有できる', async () => {
-    // 別ユーザーでログイン
-    await stagehand.act('ログアウトする');
-    await stagehand.act('メールアドレス "member@example.com" でログインする');
-    await stagehand.act('同じ組織 "田中家" を選択する');
-    
-    // 活動フィード確認
-    await stagehand.act('活動フィードタブをクリックする');
-    await stagehand.assert('他のメンバーが醤油を消費した活動が表示されている');
-    
-    // 備蓄品追加（別メンバー）
-    await stagehand.act('新しい備蓄品 "米" を追加する');
-    await stagehand.act('数量 "5kg" で登録する');
-    
-    // 元ユーザーで確認
-    await stagehand.act('ログアウトして "test@example.com" で再ログインする');
-    await stagehand.assert('メンバーが追加した "米" が表示されている');
-  });
-
-  it('期限管理とアラート機能が動作する', async () => {
-    // 期限切れ近商品の追加
-    await stagehand.act('期限が3日後の商品 "牛乳" を追加する');
-    
-    // アラート確認
-    await stagehand.assert('危険アラートが表示されている');
-    await stagehand.assert('期限切れ近商品リストに "牛乳" が表示されている');
-    
-    // 期限切れ商品の処理
-    await stagehand.act('牛乳を消費して在庫を0にする');
-    await stagehand.assert('期限切れ近商品リストから "牛乳" が削除されている');
-  });
-
-  it('バーコードスキャン機能が動作する', async () => {
-    // モバイル画面でのテスト
-    await stagehand.page.setViewportSize({ width: 375, height: 667 });
-    
-    await stagehand.act('バーコードスキャンボタンをタップする');
-    await stagehand.act('カメラ権限を許可する');
-    
-    // モックバーコードデータを使用
-    await stagehand.act('JANコード "4901515001234" をスキャンする');
-    await stagehand.assert('商品情報が自動入力されている');
-    await stagehand.assert('商品名に "醤油" が入力されている');
-  });
-});
-```
-
-**パフォーマンステスト**
-```typescript
-// packages/e2e-tests/src/performance.test.ts
-import { describe, it } from 'vitest';
-import { stagehand } from './setup';
-
-describe('パフォーマンステスト', () => {
-  it('大量データでの表示性能', async () => {
-    // 大量データの準備
-    await stagehand.act('テストデータ生成ページに移動する');
-    await stagehand.act('1000件の備蓄品データを生成する');
-    
-    // 表示性能測定
-    const startTime = Date.now();
-    await stagehand.act('備蓄品一覧ページに移動する');
-    await stagehand.assert('備蓄品一覧が表示されている');
-    const loadTime = Date.now() - startTime;
-    
-    expect(loadTime).toBeLessThan(3000); // 3秒以内
-    
-    // 検索性能測定
-    const searchStart = Date.now();
-    await stagehand.act('検索ボックスに "テスト" を入力する');
-    await stagehand.assert('検索結果が表示されている');
-    const searchTime = Date.now() - searchStart;
-    
-    expect(searchTime).toBeLessThan(1000); // 1秒以内
-  });
-});
-```
-
-## Infrastructure as Code (Terrafo
-
-### Railway 初期構築
-
-**Railway 設定**
-```yaml
-# railway.toml
-[build]
-builder = "nixpacks"
-
-[deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 300
-restartPolicyType = "on_failure"
-
-[[services]]
-name = "bff"
-source = "apps/bff"
-
-[[services]]
-name = "auth-service"
-source = "apps/services/auth-service"
-
-[[services]]
-name = "inventory-service"
-source = "apps/services/inventory-service"
-
-[[services]]
-name = "web-admin"
-source = "apps/web-admin"
-
-[[services]]
-name = "postgres"
-image = "postgres:15"
-variables = { POSTGRES_DB = "inventory_app", POSTGRES_USER = "app", POSTGRES_PASSWORD = "${{ secrets.DB_PASSWORD }}" }
-
-[[services]]
-name = "valkey"
-image = "valkey/valkey:7"
-
-[[services]]
-name = "mongodb"
-image = "mongo:7"
-variables = { MONGO_INITDB_ROOT_USERNAME = "admin", MONGO_INITDB_ROOT_PASSWORD = "${{ secrets.MONGO_PASSWORD }}" }
-```
-
-### Pulumi IaC 設計
-
-**プロジェクト構造**
-```
-infrastructure/
-├── environments/
-│   ├── development/
-│   │   ├── index.ts
-│   │   ├── Pulumi.yaml
-│   │   └── Pulumi.dev.yaml
-│   ├── staging/
-│   └── production/
-├── components/
-│   ├── kubernetes-cluster/
-│   ├── database/
-│   ├── networking/
-│   ├── monitoring/
-│   └── security/
-├── shared/
-│   ├── config.ts
-│   └── types.ts
-└── scripts/
-    ├── deploy.sh
-    └── destroy.sh
-```
-
-**Kubernetes クラスター コンポーネント**
-```typescript
-// infrastructure/components/kubernetes-cluster/index.ts
-import * as gcp from "@pulumi/gcp";
-import * as k8s from "@pulumi/kubernetes";
-import * as pulumi from "@pulumi/pulumi";
-
-export interface KubernetesClusterArgs {
-  name: string;
-  region: string;
-  projectId: string;
-  network: pulumi.Input<string>;
-  subnetwork: pulumi.Input<string>;
-  nodeCount: number;
-  minNodeCount: number;
-  maxNodeCount: number;
-  machineType: string;
-  preemptible: boolean;
-  environment: string;
-}
-
-export class KubernetesCluster extends pulumi.ComponentResource {
-  public readonly cluster: gcp.container.Cluster;
-  public readonly nodePool: gcp.container.NodePool;
-  public readonly serviceAccount: gcp.serviceaccount.Account;
-  public readonly provider: k8s.Provider;
-
-  constructor(name: string, args: KubernetesClusterArgs, opts?: pulumi.ComponentResourceOptions) {
-    super("inventory:kubernetes:Cluster", name, {}, opts);
-
-    // サービスアカウント作成
-    this.serviceAccount = new gcp.serviceaccount.Account(`${name}-sa`, {
-      accountId: `${args.name}-sa`,
-      displayName: "Kubernetes Service Account",
-    }, { parent: this });
-
-    // IAM ロール付与
-    const roles = [
-      "roles/logging.logWriter",
-      "roles/monitoring.metricWriter",
-      "roles/monitoring.viewer",
-      "roles/stackdriver.resourceMetadata.writer"
-    ];
-
-    roles.forEach((role, index) => {
-      new gcp.projects.IAMMember(`${name}-iam-${index}`, {
-        role: role,
-        member: pulumi.interpolate`serviceAccount:${this.serviceAccount.email}`,
-      }, { parent: this });
-    });
-
-    // GKE クラスター作成
-    this.cluster = new gcp.container.Cluster(name, {
-      name: args.name,
-      location: args.region,
-      removeDefaultNodePool: true,
-      initialNodeCount: 1,
-      network: args.network,
-      subnetwork: args.subnetwork,
-
-      // セキュリティ設定
-      masterAuth: {
-        clientCertificateConfig: {
-          issueClientCertificate: false,
-        },
-      },
-
-      // ワークロードアイデンティティ
-      workloadIdentityConfig: {
-        workloadPool: `${args.projectId}.svc.id.goog`,
-      },
-
-      // アドオン設定
-      addonsConfig: {
-        httpLoadBalancing: { disabled: false },
-        horizontalPodAutoscaling: { disabled: false },
-        networkPolicyConfig: { disabled: false },
-      },
-
-      // ネットワークポリシー
-      networkPolicy: {
-        enabled: true,
-      },
-
-      // プライベートクラスター設定
-      privateClusterConfig: {
-        enablePrivateNodes: true,
-        enablePrivateEndpoint: false,
-        masterIpv4CidrBlock: "10.0.0.0/28",
-      },
-
-      // IP割り当てポリシー
-      ipAllocationPolicy: {
-        clusterSecondaryRangeName: "pods",
-        servicesSecondaryRangeName: "services",
-      },
-    }, { parent: this });
-
-    // ノードプール作成
-    this.nodePool = new gcp.container.NodePool(`${name}-nodes`, {
-      name: `${args.name}-node-pool`,
-      location: args.region,
-      cluster: this.cluster.name,
-      nodeCount: args.nodeCount,
-
-      nodeConfig: {
-        preemptible: args.preemptible,
-        machineType: args.machineType,
-        serviceAccount: this.serviceAccount.email,
-        oauthScopes: ["https://www.googleapis.com/auth/cloud-platform"],
-
-        // ワークロードアイデンティティ
-        workloadMetadataConfig: {
-          mode: "GKE_METADATA",
-        },
-
-        // セキュリティ設定
-        shieldedInstanceConfig: {
-          enableSecureBoot: true,
-          enableIntegrityMonitoring: true,
-        },
-
-        // ディスク設定
-        diskSizeGb: 100,
-        diskType: "pd-ssd",
-
-        // ラベル
-        labels: {
-          environment: args.environment,
-          managed_by: "pulumi",
-        },
-
-        // Taint設定（本番環境のみ）
-        ...(args.environment === "production" && {
-          taints: [{
-            key: "production",
-            value: "true",
-            effect: "NO_SCHEDULE",
-          }],
-        }),
-      },
-
-      // 自動スケーリング
-      autoscaling: {
-        minNodeCount: args.minNodeCount,
-        maxNodeCount: args.maxNodeCount,
-      },
-
-      // 管理設定
-      management: {
-        autoRepair: true,
-        autoUpgrade: true,
-      },
-
-      // アップグレード設定
-      upgradeSettings: {
-        maxSurge: 1,
-        maxUnavailable: 0,
-      },
-    }, { parent: this });
-
-    // Kubernetes プロバイダー作成
-    this.provider = new k8s.Provider(`${name}-k8s`, {
-      kubeconfig: pulumi.all([this.cluster.name, this.cluster.location, this.cluster.masterAuth])
-        .apply(([name, location, auth]) => {
-          const context = `gke_${args.projectId}_${location}_${name}`;
-          return `apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: ${auth.clusterCaCertificate}
-    server: https://${this.cluster.endpoint}
-  name: ${context}
-contexts:
-- context:
-    cluster: ${context}
-    user: ${context}
-  name: ${context}
-current-context: ${context}
-kind: Config
-preferences: {}
-users:
-- name: ${context}
-  user:
-    exec:
-      apiVersion: client.authentication.k8s.io/v1beta1
-      command: gke-gcloud-auth-plugin
-      installHint: Install gke-gcloud-auth-plugin for use with kubectl by following
-        https://cloud.google.com/blog/products/containers-kubernetes/kubectl-auth-changes-in-gke
-      provideClusterInfo: true
-`;
-        }),
-    }, { parent: this });
-
-    this.registerOutputs({
-      clusterName: this.cluster.name,
-      clusterEndpoint: this.cluster.endpoint,
-      kubeconfig: this.provider.kubeconfig,
-    });
-  }
-}
-```
-
-**データベース コンポーネント**
-```typescript
-// infrastructure/components/database/index.ts
-import * as gcp from "@pulumi/gcp";
-import * as mongodbatlas from "@pulumi/mongodbatlas";
-import * as pulumi from "@pulumi/pulumi";
-import * as random from "@pulumi/random";
-
-export interface DatabaseArgs {
-  environment: string;
-  postgresInstanceName: string;
-  postgresTier: string;
-  postgresDiskSize: number;
-  network: pulumi.Input<string>;
-  mongodbProjectId: string;
-  mongodbInstanceSize: string;
-  mongodbDiskSize: number;
-  mongodbRegion: string;
-}
-
-export class Database extends pulumi.ComponentResource {
-  public readonly postgres: gcp.sql.DatabaseInstance;
-  public readonly postgresDatabase: gcp.sql.Database;
-  public readonly postgresUser: gcp.sql.User;
-  public readonly mongodb: mongodbatlas.Cluster;
-  public readonly mongodbUser: mongodbatlas.DatabaseUser;
-
-  constructor(name: string, args: DatabaseArgs, opts?: pulumi.ComponentResourceOptions) {
-    super("inventory:database:Database", name, {}, opts);
-
-    // PostgreSQL パスワード生成
-    const postgresPassword = new random.RandomPassword(`${name}-postgres-password`, {
-      length: 32,
-      special: true,
-    }, { parent: this });
-
-    // Cloud SQL PostgreSQL インスタンス
-    this.postgres = new gcp.sql.DatabaseInstance(`${name}-postgres`, {
-      name: args.postgresInstanceName,
-      databaseVersion: "POSTGRES_15",
-      region: "asia-northeast1",
-
-      settings: {
-        tier: args.postgresTier,
-        availabilityType: args.environment === "production" ? "REGIONAL" : "ZONAL",
-
-        // バックアップ設定
-        backupConfiguration: {
-          enabled: true,
-          startTime: "03:00",
-          pointInTimeRecoveryEnabled: true,
-          backupRetentionSettings: {
-            retainedBackups: 30,
-          },
-        },
-
-        // メンテナンス設定
-        maintenanceWindow: {
-          day: 7,
-          hour: 4,
-          updateTrack: "stable",
-        },
-
-        // IP設定
-        ipConfiguration: {
-          ipv4Enabled: false,
-          privateNetwork: args.network,
-          requireSsl: true,
-        },
-
-        // ディスク設定
-        diskAutoresize: true,
-        diskAutoresizeLimit: 1000,
-        diskSize: args.postgresDiskSize,
-        diskType: "PD_SSD",
-
-        // インサイト設定
-        insightsConfig: {
-          queryInsightsEnabled: true,
-          queryStringLength: 1024,
-          recordApplicationTags: true,
-          recordClientAddress: true,
-        },
-
-        // ユーザーラベル
-        userLabels: {
-          environment: args.environment,
-          managed_by: "pulumi",
-        },
-      },
-
-      deletionProtection: args.environment === "production",
-    }, { parent: this });
-
-    // データベース作成
-    this.postgresDatabase = new gcp.sql.Database(`${name}-db`, {
-      name: "inventory_app",
-      instance: this.postgres.name,
-    }, { parent: this });
-
-    // ユーザー作成
-    this.postgresUser = new gcp.sql.User(`${name}-user`, {
-      name: "app_user",
-      instance: this.postgres.name,
-      password: postgresPassword.result,
-    }, { parent: this });
-
-    // MongoDB Atlas パスワード生成
-    const mongodbPassword = new random.RandomPassword(`${name}-mongodb-password`, {
-      length: 32,
-      special: false, // MongoDB Atlas は特殊文字制限あり
-    }, { parent: this });
-
-    // MongoDB Atlas クラスター
-    this.mongodb = new mongodbatlas.Cluster(`${name}-mongodb`, {
-      projectId: args.mongodbProjectId,
-      name: `${args.environment}-mongodb`,
-      clusterType: "REPLICASET",
-
-      // プロバイダー設定
-      providerName: "GCP",
-      providerRegionName: args.mongodbRegion,
-      providerInstanceSizeName: args.mongodbInstanceSize,
-
-      // ストレージ設定
-      diskSizeGb: args.mongodbDiskSize,
-      providerDiskTypeName: "P10",
-      providerEncryptEbsVolume: true,
-
-      // バックアップ設定
-      backupEnabled: true,
-      pitEnabled: true,
-
-      // 自動スケーリング
-      autoScalingDiskGbEnabled: true,
-      autoScalingComputeEnabled: true,
-      autoScalingComputeScaleDownEnabled: true,
-
-      // 高度な設定
-      mongoDbMajorVersion: "7.0",
-      labels: [
-        {
-          key: "environment",
-          value: args.environment,
-        },
-        {
-          key: "managed_by",
-          value: "pulumi",
-        },
-      ],
-    }, { parent: this });
-
-    // MongoDB ユーザー作成
-    this.mongodbUser = new mongodbatlas.DatabaseUser(`${name}-mongodb-user`, {
-      username: "app_user",
-      password: mongodbPassword.result,
-      projectId: args.mongodbProjectId,
-      authDatabaseName: "admin",
-
-      roles: [{
-        roleName: "readWrite",
-        databaseName: "inventory_app",
-      }],
-
-      labels: [
-        {
-          key: "environment",
-          value: args.environment,
-        },
-      ],
-    }, { parent: this });
-
-    this.registerOutputs({
-      postgresConnectionName: this.postgres.connectionName,
-      postgresPrivateIpAddress: this.postgres.privateIpAddress,
-      mongodbConnectionString: this.mongodb.mongoUri,
-    });
-  }
-}
-```
-
-**本番環境設定**
-```typescript
-// infrastructure/environments/production/index.ts
-import * as pulumi from "@pulumi/pulumi";
-import * as gcp from "@pulumi/gcp";
-import * as k8s from "@pulumi/kubernetes";
-import { KubernetesCluster } from "../../components/kubernetes-cluster";
-import { Database } from "../../components/database";
-import { Networking } from "../../components/networking";
-import { Monitoring } from "../../components/monitoring";
-
-const config = new pulumi.Config();
-const gcpConfig = new pulumi.Config("gcp");
-
-// 基本設定
-const projectId = gcpConfig.require("project");
-const region = "asia-northeast1";
-const environment = "production";
-
-// ネットワーキング
-const networking = new Networking("inventory-app-prod-network", {
-  projectId,
-  region,
-  environment,
-});
-
-// Kubernetes クラスター
-const cluster = new KubernetesCluster("inventory-app-prod-cluster", {
-  name: "inventory-app-prod",
-  region,
-  projectId,
-  network: networking.network.id,
-  subnetwork: networking.subnetwork.id,
-  nodeCount: 3,
-  minNodeCount: 2,
-  maxNodeCount: 10,
-  machineType: "e2-standard-4",
-  preemptible: false,
-  environment,
-});
-
-// データベース
-const database = new Database("inventory-app-prod-db", {
-  environment,
-  postgresInstanceName: "inventory-app-prod-postgres",
-  postgresTier: "db-custom-4-16384",
-  postgresDiskSize: 100,
-  network: networking.network.id,
-  mongodbProjectId: config.require("mongodbProjectId"),
-  mongodbInstanceSize: "M30",
-  mongodbDiskSize: 100,
-  mongodbRegion: "ASIA_NORTHEAST_1",
-});
-
-// 監視
-const monitoring = new Monitoring("inventory-app-prod-monitoring", {
-  clusterName: cluster.cluster.name,
-  environment,
-  projectId,
-});
-
-// ArgoCD インストール
-const argocd = new k8s.helm.v3.Release("argocd", {
-  chart: "argo-cd",
-  version: "5.46.7",
-  repositoryOpts: {
-    repo: "https://argoproj.github.io/argo-helm",
-  },
-  namespace: "argocd",
-  createNamespace: true,
-  values: {
-    server: {
-      service: {
-        type: "LoadBalancer",
-      },
-      ingress: {
-        enabled: true,
-        ingressClassName: "nginx",
-        hosts: ["argocd.inventory-app.com"],
-        tls: [{
-          secretName: "argocd-tls",
-          hosts: ["argocd.inventory-app.com"],
-        }],
-      },
-    },
-    configs: {
-      secret: {
-        argocdServerAdminPassword: config.requireSecret("argoCdAdminPassword"),
-      },
-    },
-  },
-}, { provider: cluster.provider });
-
-// エクスポート
-export const clusterName = cluster.cluster.name;
-export const clusterEndpoint = cluster.cluster.endpoint;
-export const postgresConnectionName = database.postgres.connectionName;
-export const mongodbConnectionString = database.mongodb.mongoUri;
-export const argoCdUrl = argocd.status.apply(status => 
-  status.loadBalancer?.ingress?.[0]?.ip ? 
-  `https://${status.loadBalancer.ingress[0].ip}` : 
-  "Pending..."
-);
-```
-
-**デプロイスクリプト**
-```bash
-#!/bin/bash
-# infrastructure/scripts/deploy.sh
-
-set -e
-
-ENVIRONMENT=${1:-development}
-ACTION=${2:-preview}
-
-echo "🚀 Deploying to $ENVIRONMENT environment with Pulumi..."
-
-cd "environments/$ENVIRONMENT"
-
-# Pulumi ログイン（必要に応じて）
-pulumi login
-
-# スタック選択/作成
-pulumi stack select $ENVIRONMENT || pulumi stack init $ENVIRONMENT
-
-# 設定値の設定
-pulumi config set gcp:project ${GCP_PROJECT_ID}
-pulumi config set gcp:region asia-northeast1
-pulumi config set mongodbProjectId ${MONGODB_PROJECT_ID} --secret
-pulumi config set argoCdAdminPassword ${ARGOCD_ADMIN_PASSWORD} --secret
-
-case $ACTION in
-  "preview")
-    pulumi preview
-    ;;
-  "up")
-    pulumi up --yes
-    ;;
-  "destroy")
-    pulumi destroy --yes
-    ;;
-  *)
-    echo "Usage: $0 <environment> <preview|up|destroy>"
-    exit 1
-    ;;
-esac
-
-echo "✅ Deployment completed!"
-```
-
-**CI/CD統合**
-```yaml
-# .github/workflows/infrastructure.yml
-name: Infrastructure
-
-on:
-  push:
-    branches: [main]
-    paths: ['infrastructure/**']
-  pull_request:
-    paths: ['infrastructure/**']
-
-jobs:
-  pulumi:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [development, staging, production]
-    
-    steps:
-      - uses: actions/checkout@v3
-      
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          cd infrastructure/environments/${{ matrix.environment }}
-          npm install
-          
-      - name: Pulumi Preview
-        uses: pulumi/actions@v4
-        with:
-          command: preview
-          stack-name: ${{ matrix.environment }}
-          work-dir: infrastructure/environments/${{ matrix.environment }}
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          GOOGLE_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          MONGODB_PROJECT_ID: ${{ secrets.MONGODB_PROJECT_ID }}
-          
-      - name: Pulumi Up
-        if: github.ref == 'refs/heads/main'
-        uses: pulumi/actions@v4
-        with:
-          command: up
-          stack-name: ${{ matrix.environment }}
-          work-dir: infrastructure/environments/${{ matrix.environment }}
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          GOOGLE_CREDENTIALS: ${{ secrets.GCP_SA_KEY }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          MONGODB_PROJECT_ID: ${{ secrets.MONGODB_PROJECT_ID }}
-```## 型安全性・品質
-管理 (Zod + lefthook)
-
-### Zod + zod-prisma-types による型安全性
-
-**Prismaスキーマ定義**
-```prisma
-// packages/database/prisma/schema.prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
-generator zod {
-  provider                         = "zod-prisma-types"
-  output                          = "../src/generated/zod"
-  useMultipleFiles                = true
-  writeBarrelFiles                = true
-  createInputTypes                = true
-  createModelTypes                = true
-  addInputTypeValidation          = true
-  addIncludeType                  = true
-  addSelectType                   = true
-  validateWhereUniqueInput        = true
-  createOptionalDefaultValuesTypes = true
-  createRelationValuesTypes       = true
-  createPartialTypes              = true
-  useDefaultValidators            = true
-  coerceDate                      = true
-  writeNullishInModelTypes        = true
-}
-
-model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  displayName String
-  firebaseUid String   @unique
-  profileImage String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // リレーション
-  createdItems     InventoryItem[] @relation("CreatedBy")
-  updatedItems     InventoryItem[] @relation("UpdatedBy")
-  consumptionLogs  ConsumptionLog[]
-  organizationMembers OrganizationMember[]
-
-  @@map("users")
-}
-
-model Organization {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  inviteCode  String   @unique
-  privacy     Privacy  @default(PRIVATE)
-  createdBy   String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // リレーション
-  members       OrganizationMember[]
-  inventoryItems InventoryItem[]
-  activityLogs   ActivityLog[]
-
-  @@map("organizations")
-}
-
-model InventoryItem {
-  id             String        @id @default(cuid())
-  organizationId String
-  name           String
-  brand          String?
-  category       Category
-  quantity       Float
-  unit           String
-  minQuantity    Float?
-  
-  // 期限管理
-  expiryDate     DateTime?
-  bestBeforeDate DateTime?
-  expiryType     ExpiryType
-  
-  // 保管・価格情報
-  storageLocation String?
-  price          Json?         // { amount: number, currency: string }
-  
-  // 商品識別
-  barcode        String?
-  asin           String?
-  
-  // メタデータ
-  tags           String[]
-  images         String[]
-  notes          String?
-  
-  // 履歴
-  createdBy      String
-  updatedBy      String
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-
-  // リレーション
-  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  creator         User           @relation("CreatedBy", fields: [createdBy], references: [id])
-  updater         User           @relation("UpdatedBy", fields: [updatedBy], references: [id])
-  consumptionLogs ConsumptionLog[]
-
-  @@map("inventory_items")
-}
-
-enum Category {
-  FOOD
-  DAILY_GOODS
-  MEDICINE
-  OTHER
-}
-
-enum ExpiryType {
-  EXPIRY
-  BEST_BEFORE
-  BOTH
-}
-
-enum Privacy {
-  PUBLIC
-  PRIVATE
-}
-```
-
-**自動生成されたZod型の活用**
-```typescript
-// packages/shared-types/src/zod-schemas.ts
-import {
-  UserSchema,
-  UserCreateInputSchema,
-  UserUpdateInputSchema,
-  InventoryItemSchema,
-  InventoryItemCreateInputSchema,
-  InventoryItemUpdateInputSchema,
-  OrganizationSchema,
-  CategorySchema,
-  ExpiryTypeSchema
-} from '@packages/database/src/generated/zod';
-
-// 追加バリデーション
-export const CreateInventoryItemRequestSchema = InventoryItemCreateInputSchema.extend({
-  // カスタムバリデーション
-  quantity: z.number().min(0, '数量は0以上である必要があります'),
-  name: z.string().min(1, '商品名は必須です').max(100, '商品名は100文字以内です'),
-  unit: z.string().min(1, '単位は必須です'),
-  
-  // 条件付きバリデーション
-  expiryDate: z.date().optional().refine((date) => {
-    if (date) {
-      return date > new Date();
-    }
-    return true;
-  }, '期限日は未来の日付である必要があります'),
-  
-  // 価格バリデーション
-  price: z.object({
-    amount: z.number().min(0, '価格は0以上である必要があります'),
-    currency: z.enum(['JPY', 'USD', 'EUR'])
-  }).optional(),
-  
-  // タグバリデーション
-  tags: z.array(z.string().min(1).max(20)).max(10, 'タグは最大10個まで')
-}).refine((data) => {
-  // 期限タイプに応じた期限日の必須チェック
-  if (data.expiryType === 'EXPIRY' && !data.expiryDate) {
-    return false;
-  }
-  if (data.expiryType === 'BEST_BEFORE' && !data.bestBeforeDate) {
-    return false;
-  }
-  if (data.expiryType === 'BOTH' && (!data.expiryDate || !data.bestBeforeDate)) {
-    return false;
-  }
-  return true;
-}, {
-  message: '期限タイプに応じた期限日を設定してください'
-});
-
-// 検索パラメータスキーマ
-export const InventorySearchSchema = z.object({
-  query: z.string().optional(),
-  category: CategorySchema.optional(),
-  storageLocation: z.string().optional(),
-  expiryType: ExpiryTypeSchema.optional(),
-  tags: z.array(z.string()).optional(),
-  expiryDateFrom: z.date().optional(),
-  expiryDateTo: z.date().optional(),
-  page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(100).default(20),
-  sortBy: z.enum(['name', 'expiryDate', 'createdAt', 'quantity']).default('createdAt'),
-  sortOrder: z.enum(['asc', 'desc']).default('desc')
-}).refine((data) => {
-  // 期限日範囲の妥当性チェック
-  if (data.expiryDateFrom && data.expiryDateTo) {
-    return data.expiryDateFrom <= data.expiryDateTo;
-  }
-  return true;
-}, {
-  message: '期限日の開始日は終了日以前である必要があります'
-});
-
-// 型エクスポート
-export type CreateInventoryItemRequest = z.infer<typeof CreateInventoryItemRequestSchema>;
-export type InventorySearchParams = z.infer<typeof InventorySearchSchema>;
-```
-
-**tRPCでのZod統合**
-```typescript
-// packages/trpc-router/src/inventory.router.ts
-import { z } from 'zod';
-import { router, protectedProcedure } from './trpc';
-import { 
-  CreateInventoryItemRequestSchema,
-  InventorySearchSchema,
-  InventoryItemUpdateInputSchema
-} from '@packages/shared-types';
-
-export const inventoryRouter = router({
-  create: protectedProcedure
-    .input(CreateInventoryItemRequestSchema.extend({
-      organizationId: z.string().cuid()
-    }))
-    .mutation(async ({ input, ctx }) => {
-      // Zodによる自動バリデーション完了
-      // 型安全な処理
-      const result = await ctx.inventoryService.createItem(input);
-      return result;
-    }),
-
-  update: protectedProcedure
-    .input(InventoryItemUpdateInputSchema.extend({
-      id: z.string().cuid(),
-      organizationId: z.string().cuid()
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const { id, organizationId, ...updateData } = input;
-      const result = await ctx.inventoryService.updateItem(id, updateData);
-      return result;
-    }),
-
-  search: protectedProcedure
-    .input(InventorySearchSchema.extend({
-      organizationId: z.string().cuid()
-    }))
-    .query(async ({ input, ctx }) => {
-      const result = await ctx.inventoryService.search(input);
-      return result;
-    }),
-
-  // バーコード検索（外部API連携）
-  getByBarcode: protectedProcedure
-    .input(z.object({
-      barcode: z.string().regex(/^\d{8,13}$/, 'JANコードは8-13桁の数字である必要があります')
-    }))
-    .query(async ({ input, ctx }) => {
-      const product = await ctx.productService.getByBarcode(input.barcode);
-      return product;
-    })
-});
-```
-
-### lefthook による品質ゲート
-
-**lefthook設定**
-```yaml
-# lefthook.yml
-pre-commit:
-  parallel: true
-  commands:
-    # 型チェック
-    type-check:
-      glob: "*.{ts,tsx}"
-      run: npx turbo run type-check --filter=...{staged}
-      stage_fixed: true
-
-    # リンター
-    lint:
-      glob: "*.{ts,tsx,js,jsx}"
-      run: npx turbo run lint --filter=...{staged}
-      stage_fixed: true
-
-    # フォーマッター
-    format:
-      glob: "*.{ts,tsx,js,jsx,json,md}"
-      run: npx turbo run format --filter=...{staged}
-      stage_fixed: true
-
-    # Zodスキーマ検証
-    validate-schemas:
-      glob: "*.{ts,tsx}"
-      run: npx turbo run validate:schemas --filter=...{staged}
-
-    # Prismaスキーマ検証
-    validate-prisma:
-      glob: "packages/database/prisma/schema.prisma"
-      run: |
-        cd packages/database
-        npx prisma validate
-        npx prisma generate
-
-pre-push:
-  parallel: true
-  commands:
-    # 全体テスト
-    test:
-      run: npx turbo run test
-
-    # 型安全性チェック
-    type-safety:
-      run: npx turbo run type-check
-
-    # セキュリティ監査
-    audit:
-      run: npm audit --audit-level=moderate
-
-    # 依存関係チェック
-    deps-check:
-      run: npx turbo run deps:check
-
-commit-msg:
-  commands:
-    # コミットメッセージ検証
-    commitlint:
-      run: npx commitlint --edit {1}
-
-post-checkout:
-  commands:
-    # 依存関係インストール
-    install-deps:
-      run: |
-        if [ -f package-lock.json ]; then
-          npm ci
-        fi
-
-    # Prisma生成
-    generate-prisma:
-      run: |
-        cd packages/database
-        npx prisma generate
-```
-
-**Turborepo タスク統合**
-```json
-// turbo.json
-{
-  "pipeline": {
-    "type-check": {
-      "dependsOn": ["^build", "generate:prisma"],
-      "outputs": []
-    },
-    "lint": {
-      "outputs": []
-    },
-    "format": {
-      "outputs": []
-    },
-    "format:check": {
-      "outputs": []
-    },
-    "validate:schemas": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
-    "generate:prisma": {
-      "outputs": ["packages/database/src/generated/**"]
-    },
-    "deps:check": {
-      "outputs": []
-    }
-  }
-}
-```
-
-**パッケージ別スクリプト**
-```json
-// packages/shared-types/package.json
-{
-  "scripts": {
-    "validate:schemas": "tsx src/scripts/validate-schemas.ts",
-    "type-check": "tsgo check --no-emit",
-    "build": "tsgo build",
-    "lint": "tsgolint src/**/*.ts",
-    "format": "biome format --write src",
-    "format:check": "biome format src"
-  }
-}
-```
-
-**スキーマ検証スクリプト**
-```typescript
-// packages/shared-types/src/scripts/validate-schemas.ts
-import { z } from 'zod';
-import { 
-  CreateInventoryItemRequestSchema,
-  InventorySearchSchema,
-  UserSchema 
-} from '../zod-schemas';
-
-// テストデータでスキーマ検証
-const testValidation = () => {
-  console.log('🔍 Zodスキーマ検証を開始...');
-
-  try {
-    // 正常ケース
-    const validItem = CreateInventoryItemRequestSchema.parse({
-      name: 'テスト商品',
-      category: 'FOOD',
-      quantity: 1,
-      unit: '個',
-      expiryType: 'BEST_BEFORE',
-      bestBeforeDate: new Date('2024-12-31')
-    });
-    console.log('✅ 正常ケース: OK');
-
-    // 異常ケース
-    try {
-      CreateInventoryItemRequestSchema.parse({
-        name: '', // 空文字（エラー）
-        category: 'INVALID', // 無効なカテゴリ（エラー）
-        quantity: -1, // 負の数（エラー）
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        console.log('✅ バリデーションエラー検出: OK');
-        console.log('   エラー詳細:', error.errors.map(e => e.message).join(', '));
-      }
-    }
-
-    console.log('🎉 スキーマ検証完了');
-  } catch (error) {
-    console.error('❌ スキーマ検証失敗:', error);
-    process.exit(1);
-  }
-};
-
-testValidation();
-```
-
-**CI/CD統合**
-```yaml
-# .github/workflows/quality-gate.yml
-name: Quality Gate
-
-on:
-  pull_request:
-    branches: [main, develop]
-
-jobs:
-  quality-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      - run: npm ci
-
-      # lefthookによる品質チェック
-      - name: Install lefthook
-        run: npm install -g lefthook
-
-      - name: Run pre-commit hooks
-        run: lefthook run pre-commit
-
-      - name: Run pre-push hooks
-        run: lefthook run pre-push
-
-      # 追加の品質チェック
-      - name: Check for type errors
-        run: npx turbo run type-check
-
-      - name: Validate Zod schemas
-        run: npx turbo run validate:schemas
-
-      - name: Check dependencies
-        run: npx turbo run deps:check
-
-      # セキュリティチェック
-      - name: Security audit
-        run: npm audit --audit-level=moderate
-
-      # コードカバレッジ
-      - name: Test coverage
-        run: npx turbo run test:coverage
-        
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-```
-
-**開発者向けセットアップ**
-```bash
-#!/bin/bash
-# scripts/setup-dev.sh
-
-echo "🚀 開発環境セットアップを開始..."
-
-# lefthook インストール
-npm install -g lefthook
-
-# Git hooks セットアップ
-lefthook install
-
-# 依存関係インストール
-npm ci
-
-# Prisma生成
-cd packages/database
-npx prisma generate
-cd ../..
-
-# 初回ビルド
-npx turbo run build
-
-# 型チェック
-npx turbo run type-check
-
-echo "✅ 開発環境セットアップ完了!"
-echo "📝 コミット前に自動的に品質チェックが実行されます"
-```### Type
-Script-Go (tsgo) 設定
-
-**tsgo設定ファイル**
-```json
-// tsgo.json (プロジェクトルート)
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@packages/*": ["packages/*/src"],
-      "@apps/*": ["apps/*/src"]
-    }
-  },
-  "include": [
-    "apps/**/*",
-    "packages/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "build",
-    "**/*.test.ts",
-    "**/*.spec.ts"
-  ],
-  "tsgo": {
-    "parallel": true,
-    "workers": 8,
-    "cache": true,
-    "cacheDir": ".tsgo-cache",
-    "incremental": true,
-    "watch": true,
-    "performance": {
-      "measureCompilation": true,
-      "logLevel": "info"
-    }
-  }
-}
-```
-
-**パッケージ別tsgo設定**
-```json
-// packages/shared-types/tsgo.json
-{
-  "extends": "../../tsgo.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "declaration": true,
-    "declarationMap": true,
-    "composite": true
-  },
-  "include": ["src/**/*"],
-  "references": []
-}
-```
-
-```json
-// apps/services/auth-service/tsgo.json
-{
-  "extends": "../../../tsgo.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "target": "ES2020",
-    "module": "CommonJS",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true
-  },
-  "include": ["src/**/*"],
-  "references": [
-    { "path": "../../../packages/shared-types" },
-    { "path": "../../../packages/database" },
-    { "path": "../../../packages/error-handling" }
-  ]
-}
-```
-
-**Turborepo統合**
-```json
-// turbo.json (tsgo対応)
-{
-  "pipeline": {
-    "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".tsgo-cache/**"]
-    },
-    "type-check": {
-      "dependsOn": ["^build"],
-      "outputs": [".tsgo-cache/**"]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    }
-  },
-  "globalEnv": ["NODE_ENV"],
-  "globalDependencies": ["tsgo.json", "**/*.d.ts"]
-}
-```
-
-**開発スクリプト更新**
-```json
-// package.json (ルート)
-{
-  "scripts": {
-    "build": "tsgo build --project .",
-    "type-check": "tsgo check --project .",
-    "dev": "tsgo watch --project .",
-    "clean": "rm -rf .tsgo-cache dist build"
-  },
-  "devDependencies": {
-    "typescript-go": "^0.1.0",
-    "tsgo": "^0.1.0"
-  }
-}
-```
-
-**NestJS統合**
-```typescript
-// apps/services/auth-service/src/main.ts
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-
-// tsgoでコンパイルされた高速起動
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log'],
-  });
-  
-  // tsgoの高速コンパイルを活用したHMR
-  if (process.env.NODE_ENV === 'development') {
-    const { setupHMR } = await import('./hmr');
-    setupHMR(app);
-  }
-
-  await app.listen(3001);
-  console.log(`🚀 Auth Service running on port 3001 (compiled with tsgo)`);
-}
-
-bootstrap();
-```
-
-**HMR設定 (開発環境)**
-```typescript
-// apps/services/auth-service/src/hmr.ts
-import { INestApplication } from '@nestjs/common';
-
-export function setupHMR(app: INestApplication) {
-  if (module.hot) {
-    module.hot.accept();
-    module.hot.dispose(() => app.close());
-  }
-}
-```
-
-**Webpack設定 (tsgo統合)**
-```javascript
-// apps/services/auth-service/webpack.config.js
-const path = require('path');
-
-module.exports = {
-  entry: './src/main.ts',
-  target: 'node',
-  mode: process.env.NODE_ENV || 'development',
-  
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        use: [
-          {
-            loader: 'tsgo-loader', // tsgoローダー使用
-            options: {
-              configFile: path.resolve(__dirname, 'tsgo.json'),
-              transpileOnly: true,
-              experimentalWatcher: true
-            }
-          }
-        ],
-        exclude: /node_modules/,
-      },
-    ],
-  },
-  
-  resolve: {
-    extensions: ['.ts', '.js'],
-    alias: {
-      '@packages': path.resolve(__dirname, '../../../packages'),
-    }
-  },
-  
-  output: {
-    path: path.resolve(__dirname, 'dist'),
-    filename: 'main.js',
-  },
-  
-  // tsgoの高速コンパイルを活用
-  optimization: {
-    minimize: false, // 開発時は最小化無効
-  },
-  
-  // HMR設定
-  devServer: {
-    hot: true,
-    liveReload: true,
-  }
-};
-```
-
-**CI/CD最適化**
-```yaml
-# .github/workflows/build.yml
-name: Build with tsgo
-
-on: [push, pull_request]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-      
-      # tsgoキャッシュ復元
-      - name: Ca       uses: actions/cache@v3
-        with:
-          path: .tsgo-cache
-          key: tsgo-${{ runner.os }}-${{ hashFiles('**/tsgo.json') }}-${{ hashFiles('**/*.ts') }}
-          restore-keys: |
-            tsgo-${{ runner.os }}-${{ hashFiles('**/tsgo.json') }}-
-            tsgo-${{ runner.os }}-
-
-      - run: npm ci
-      
-      # tsgoによる高速ビルド
-      - name: Type check with tsgo
-        run: npx turbo run type-check
-        
-      - name: Build with tsgo
-        run: npx turbo run build
-        
-      # ビルド時間測定
-      - name: Measure build performance
-        run: |
-          echo "Build completed with tsgo"
-          echo "Cache size: $(du -sh .tsgo-cache || echo 'No cache')"
-```
-
-**パフォーマンス比較**
-```typescript
-// scripts/benchmark-tsgo.ts
-import { execSync } from 'child_process';
-import { performance } from 'perf_hooks';
-
-const benchmarkCompilation = () => {
-  console.log('🏁 TypeScript コンパイラ性能比較');
-  
-  // tsgo測定
-  const tsgoStart = performance.now();
-  try {
-    execSync('npx tsgo check --project .', { stdio: 'pipe' });
-    const tsgoTime = performance.now() - tsgoStart;
-    console.log(`✅ tsgo: ${tsgoTime.toFixed(2)}ms`);
-  } catch (error) {
-    console.log('❌ tsgo: エラー');
-  }
-  
-  // tsc測定（比較用）
-  const tscStart = performance.now();
-  try {
-    execSync('npx tsc --noEmit', { stdio: 'pipe' });
-    const tscTime = performance.now() - tscStart;
-    console.log(`⏰ tsc: ${tscTime.toFixed(2)}ms`);
-    
-    const speedup = tscTime / (performance.now() - tsgoStart);
-    console.log(`🚀 tsgo is ${speedup.toFixed(1)}x faster than tsc`);
-  } catch (error) {
-    console.log('❌ tsc: エラー');
-  }
-};
-
-benchmarkCompilation();
 ```
