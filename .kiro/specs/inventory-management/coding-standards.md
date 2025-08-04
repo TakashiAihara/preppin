@@ -2,15 +2,15 @@
 
 ## 概要
 
-備蓄管理アプリケーションの開発における統一されたコード規約とベストプラクティス。Flutter、TypeScript、gRPC、DDD/Clean Architectureに対応した包括的な開発標準。
+備蓄管理アプリケーションの開発における統一されたコード規約とベストプラクティス。React Native、TypeScript、Hono RPC、DDD/Clean Architectureに対応した包括的な開発標準。
 
 ## 全般的な原則
 
 ### 1. 型安全性ファースト
 - すべてのコードで型安全性を最優先
 - `any`型の使用禁止（やむを得ない場合は`unknown`を使用）
-- Protocol Buffersによる厳密な型定義
-- Dartでの`dynamic`型使用最小化
+- Zodスキーマによる厳密な型定義
+- TypeScriptでの`any`型使用最小化
 
 ### 2. 関数型プログラミング指向
 - イミュータブルなデータ構造を優先
@@ -121,7 +121,7 @@ model InventoryItem {
  * @mermaid
  * graph TD
  *   A[React Web Admin] --> B[Hono BFF]
- *   C[Flutter Mobile] --> D[Hono RPC Services]
+ *   C[React Native Mobile] --> D[Hono RPC Services]
  *   B --> D
  *   D --> E[NestJS Microservices]
  *   E --> F[PostgreSQL]
@@ -630,11 +630,25 @@ export type UpdateInventoryItemData = PartialDeep<CreateInventoryItemData> & {
 
 ### 環境変数規約（Zod型安全性）
 
+#### 1. 環境変数命名規約
+
+- **環境変数名**: `UPPER_SNAKE_CASE` で定義
+- **内部変数名**: `camelCase` で使用
+- **機密情報**: 必ずマスキングして出力
+
+#### 2. 必ず環境変数にすべき項目
+
+- アプリケーションの動作に影響がある設定値
+- 環境（開発、テスト、本番）によって値が変わる設定
+- 頻繁に変更される可能性がある設定値
+- 機密情報（API キー、パスワード、トークンなど）
+- インフラ固有の設定（データベース URL、ポート番号など）
+
 ```typescript
 // ✅ 良い例: Zodによる環境変数の型安全な取得
 import { z } from 'zod'
 
-// 環境変数スキーマ定義
+// 環境変数スキーマ定義（UPPER_SNAKE_CASE）
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().min(1).max(65535).default(3000),
@@ -651,7 +665,7 @@ const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   SENTRY_DSN: z.string().url().optional(),
-  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug', 'trace']).default('info'),
   CORS_ORIGIN: z.string().or(z.array(z.string())).default('*'),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000), // 15分
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
@@ -676,38 +690,77 @@ export const parseEnvironmentVariables = (): EnvironmentConfig => {
   }
 }
 
-// 設定オブジェクト（シングルトン）
+// 設定オブジェクト（シングルトン）camelCaseで使用
 export const config = parseEnvironmentVariables()
 
-// 使用例
+// 機密情報マスキング関数
+const maskSecret = (value: string): string => {
+  if (value.length <= 8) {
+    return '*'.repeat(value.length)
+  }
+  return `${value.slice(0, 4)}${'*'.repeat(value.length - 8)}${value.slice(-4)}`
+}
+
+// ログ出力時は必ず機密情報をマスキング
+export const logConfig = () => {
+  const maskedConfig = {
+    ...config,
+    JWT_SECRET: maskSecret(config.JWT_SECRET),
+    SMTP_PASSWORD: maskSecret(config.SMTP_PASSWORD),
+    AWS_SECRET_ACCESS_KEY: config.AWS_SECRET_ACCESS_KEY 
+      ? maskSecret(config.AWS_SECRET_ACCESS_KEY) 
+      : undefined,
+  }
+  console.info('Application configuration:', maskedConfig)
+}
+
+// 使用例（camelCaseの内部変数で使用）
 export const createDatabaseConnection = () => {
+  const { databaseUrl, nodeEnv } = {
+    databaseUrl: config.DATABASE_URL,    // ✅ 内部はcamelCase
+    nodeEnv: config.NODE_ENV,
+  }
+  
   return createConnection({
-    url: config.DATABASE_URL,  // ✅ 型安全でバリデーション済み
-    ssl: config.NODE_ENV === 'production'
+    url: databaseUrl,                    // ✅ 型安全でバリデーション済み
+    ssl: nodeEnv === 'production'
   })
 }
 
 export const createJwtService = () => {
+  const { jwtSecret, jwtExpiresIn } = {
+    jwtSecret: config.JWT_SECRET,        // ✅ 内部はcamelCase
+    jwtExpiresIn: config.JWT_EXPIRES_IN,
+  }
+  
   return new JwtService({
-    secret: config.JWT_SECRET,           // ✅ 型安全、最小長チェック済み
-    expiresIn: config.JWT_EXPIRES_IN,    // ✅ 型安全
+    secret: jwtSecret,                   // ✅ 型安全、最小長チェック済み
+    expiresIn: jwtExpiresIn,             // ✅ 型安全
   })
 }
 
-// アプリケーション層での使用例
+// アプリケーション層での使用例（camelCase変数使用）
 export const createEmailService = (): EmailService => {
+  const { smtpHost, smtpPort, smtpUser, smtpPassword } = {
+    smtpHost: config.SMTP_HOST,          // ✅ 内部はcamelCase
+    smtpPort: config.SMTP_PORT,
+    smtpUser: config.SMTP_USER,
+    smtpPassword: config.SMTP_PASSWORD,
+  }
+  
   return new SmtpEmailService({
-    host: config.SMTP_HOST,              // ✅ 型安全
-    port: config.SMTP_PORT,              // ✅ 型安全、数値型保証
-    user: config.SMTP_USER,              // ✅ 型安全、email形式検証済み
-    password: config.SMTP_PASSWORD,      // ✅ 型安全
+    host: smtpHost,                      // ✅ 型安全
+    port: smtpPort,                      // ✅ 型安全、数値型保証
+    user: smtpUser,                      // ✅ 型安全、email形式検証済み
+    password: smtpPassword,              // ✅ 型安全
   })
 }
 
-// 開発環境固有の設定
-export const isDevelopment = config.NODE_ENV === 'development'
-export const isProduction = config.NODE_ENV === 'production'
-export const isTest = config.NODE_ENV === 'test'
+// 開発環境固有の設定（camelCase変数で使用）
+const { nodeEnv } = { nodeEnv: config.NODE_ENV }
+export const isDevelopment = nodeEnv === 'development'
+export const isProduction = nodeEnv === 'production'
+export const isTest = nodeEnv === 'test'
 
 // ❌ 悪い例: 生の環境変数アクセス（型安全性なし）
 const badDatabaseUrl = process.env.DATABASE_URL  // ❌ string | undefined、バリデーションなし
@@ -717,6 +770,13 @@ const badJwtSecret = process.env.JWT_SECRET      // ❌ undefined可能性、長
 // ❌ 悪い例: 実行時の型変換エラーリスク
 const veryBadPort = parseInt(process.env.PORT!)  // ❌ NaN可能性、型安全性なし
 const veryBadCorsOrigin = JSON.parse(process.env.CORS_ORIGIN || '[]')  // ❌ 解析エラーリスク
+
+// ❌ 悪い例: 機密情報をマスキングせずにログ出力
+console.log('JWT Secret:', config.JWT_SECRET)    // ❌ 機密情報が平文でログに残る
+console.log('DB Password:', process.env.DB_PASSWORD)  // ❌ 危険
+
+// ✅ 良い例: 機密情報をマスキングして出力
+console.log('JWT Secret:', maskSecret(config.JWT_SECRET))  // ✅ 安全
 
 // ✅ 良い例: 環境別設定ファイル分割
 // config/development.ts
@@ -758,56 +818,753 @@ const getEnvSchema = () => {
 export const environmentConfig = getEnvSchema().parse(process.env)
 ```
 
-### エラーハンドリング規約
+### エラーハンドリング規約（neverthrow基準）
+
+#### 1. レイヤー別エラーハンドリング戦略
+
+- **全レイヤー**: neverthrow `Result<T, E>` 型を使用
+- **コントローラーレイヤーのみ**: `Result` をキャッチし明示的に `throw` でフレームワークに伝達
+- **その他レイヤー**: 例外は投げず、`Result` 型で返す
+
+#### 2. レイヤー別実装パターン
 
 ```typescript
-// ✅ 良い例: neverthrow Result型での簡潔なエラーハンドリング
+// ✅ 良い例: 全レイヤーでnever throw Result型使用
 import { Result, ok, err } from 'neverthrow'
 
+// ドメイン層：純粋なビジネスロジック、例外なし
+export class InventoryItem {
+  public consume(amount: number): Result<ConsumptionRecord, ConsumeError> {
+    if (amount <= 0) {
+      return err('INVALID_AMOUNT')  // ✅ 例外でなくResult
+    }
+    if (amount > this.quantity) {
+      return err('INSUFFICIENT_QUANTITY')  // ✅ 例外でなくResult
+    }
+    
+    const record = new ConsumptionRecord(this.id, amount, new Date())
+    this.quantity -= amount
+    return ok(record)  // ✅ 成功もResult
+  }
+}
+
+// アプリケーション層：ユースケース、例外なし
+export const createInventoryItemUseCase = async (
+  request: CreateInventoryItemRequest
+): Promise<Result<InventoryItem, CreateInventoryItemError>> => {
+  const validationResult = validateCreateRequest(request)
+  if (validationResult.isErr()) {
+    return err('VALIDATION_ERROR')  // ✅ 例外でなくResult
+  }
+
+  const permissionResult = await checkPermission(request.organizationId, request.userId)
+  if (permissionResult.isErr()) {
+    return err('PERMISSION_DENIED')  // ✅ 例外でなくResult
+  }
+
+  const saveResult = await inventoryRepository.save(request)
+  if (saveResult.isErr()) {
+    return err('SAVE_FAILED')  // ✅ 例外でなくResult
+  }
+
+  return ok(saveResult.value)  // ✅ 成功もResult
+}
+
+// インフラ層：外部システム連携、例外なし
+export class PrismaInventoryRepository implements InventoryRepository {
+  async save(item: InventoryItem): Promise<Result<InventoryItem, SaveError>> {
+    try {
+      const result = await this.prisma.inventoryItem.create({
+        data: this.toDto(item)
+      })
+      return ok(this.toDomain(result))  // ✅ 成功はResult
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        return err('DATABASE_CONSTRAINT_VIOLATION')  // ✅ エラーもResult
+      }
+      return err('DATABASE_CONNECTION_ERROR')  // ✅ 予期しないエラーもResult
+    }
+  }
+}
+
+// ✅ コントローラー層：Resultをキャッチし、明示的にthrowでフレームワークに伝達
+export class InventoryController {
+  async createItem(
+    @Body() request: CreateInventoryItemRequest
+  ): Promise<InventoryItemResponse> {
+    const result = await this.createInventoryItemUseCase.execute(request)
+    
+    if (result.isErr()) {
+      // ✅ コントローラーレイヤーでのみ明示的にError型をthrow
+      switch (result.error) {
+        case 'VALIDATION_ERROR':
+          throw new BadRequestException('Invalid request data')
+        case 'PERMISSION_DENIED':
+          throw new ForbiddenException('Insufficient permissions')
+        case 'ORGANIZATION_NOT_FOUND':
+          throw new NotFoundException('Organization not found')
+        case 'DUPLICATE_BARCODE':
+          throw new ConflictException('Barcode already exists')
+        default:
+          throw new InternalServerErrorException('Internal server error')
+      }
+    }
+    
+    return this.toResponse(result.value)  // ✅ 成功時は正常レスポンス
+  }
+}
+
+// ✅ Hono RPCコントローラー（Hono用パターン）
+export const createInventoryItemHandler = async (c: Context) => {
+  const request = await c.req.json<CreateInventoryItemRequest>()
+  const result = await createInventoryItemUseCase.execute(request)
+  
+  if (result.isErr()) {
+    // ✅ Honoフレームワークに適した例外パターン
+    switch (result.error) {
+      case 'VALIDATION_ERROR':
+        return c.json({ error: 'Invalid request data' }, 400)
+      case 'PERMISSION_DENIED':
+        return c.json({ error: 'Insufficient permissions' }, 403)
+      case 'ORGANIZATION_NOT_FOUND':
+        return c.json({ error: 'Organization not found' }, 404)
+      case 'DUPLICATE_BARCODE':
+        return c.json({ error: 'Barcode already exists' }, 409)
+      default:
+        return c.json({ error: 'Internal server error' }, 500)
+    }
+  }
+  
+  return c.json(result.value, 201)
+}
+
+// ✅ 関数型チェーンパターン（neverthrowの場合のみ許可）
+const validateAndCreateItem = (request: CreateInventoryItemRequest) =>
+  validateCreateRequest(request)
+    .andThen(validatePermissions)
+    .andThen(createItemEntity)
+    .andThen(saveToRepository)
+    .mapErr(mapToUserFriendlyError)
+
+// エラー型定義（Union型で定義）
 export type CreateInventoryItemError = 
   | 'VALIDATION_ERROR'
   | 'PERMISSION_DENIED'
   | 'ORGANIZATION_NOT_FOUND'
   | 'DUPLICATE_BARCODE'
+  | 'SAVE_FAILED'
 
-export const createInventoryItem = async (
+export type ConsumeError = 
+  | 'INVALID_AMOUNT'
+  | 'INSUFFICIENT_QUANTITY'
+
+export type SaveError = 
+  | 'DATABASE_CONSTRAINT_VIOLATION'
+  | 'DATABASE_CONNECTION_ERROR'
+
+// ❌ 悪い例: 中間レイヤーでの例外throw
+export const badCreateItem = async (request: CreateInventoryItemRequest) => {
+  const item = await inventoryRepository.create(request)
+  if (!item) {
+    throw new Error('Failed to create item')  // ❌ アプリケーション層で例外
+  }
+  return item
+}
+
+// ❌ 悪い例: コントローラーでResult型を直接返す
+export class BadInventoryController {
+  async createItem(request: CreateInventoryItemRequest): Promise<Result<InventoryItem, string>> {
+    return await this.createInventoryItemUseCase.execute(request)  // ❌ フレームワークが認識できない
+  }
+}
+
+// ❌ 悪い例: try-catchの乱用
+export const badErrorHandling = async (request: any) => {
+  try {
+    const result = await someOperation()
+    try {
+      const another = await anotherOperation(result)
+      return another
+    } catch (innerError) {
+      throw new Error('Inner operation failed')  // ❌ ネストしたエラーハンドリング
+    }
+  } catch (outerError) {
+    throw new Error('Outer operation failed')    // ❌ 意味のないエラーラップ
+  }
+}
+```
+
+### ログ出力規約（LOG_LEVEL基準）
+
+#### 1. ログレベル定義と用途
+
+| レベル | 用途 | 例 |
+|--------|------|-----|
+| ERROR | システムエラー、処理継続可能 | API 呼び出し失敗、個別配信エラー、データベース接続失敗 |
+| WARN | 警告、注意が必要 | レート制限接近、非推奨 API 使用 |
+| INFO | 一般的な情報、ビジネスイベント | 配信開始/完了、ユーザーアクション |
+| DEBUG | 開発時のデバッグ情報 | 関数の入出力、内部状態 |
+| TRACE | 最も詳細なトレース情報 | 詳細な実行フロー、パフォーマンス計測 |
+
+#### 2. LOG_LEVEL環境変数制御
+
+```typescript
+// 環境変数設定
+LOG_LEVEL=info  // この場合、INFO以上（INFO、WARN、ERROR）のみ出力
+
+// ✅ 良い例: ログレベル別の適切な使い分け
+import { createLogger, format, transports } from 'winston'
+
+const logger = createLogger({
+  level: config.LOG_LEVEL,  // 環境変数で制御
+  format: format.combine(
+    format.timestamp(),
+    format.errors({ stack: true }),
+    format.json(),
+    format.printf(({ timestamp, level, message, ...meta }) => {
+      // 機密情報のマスキング
+      const maskedMeta = maskSensitiveData(meta)
+      return JSON.stringify({ timestamp, level, message, ...maskedMeta })
+    })
+  ),
+  transports: [
+    new transports.Console(),
+    new transports.File({ filename: 'app.log' })
+  ]
+})
+
+// ERROR: システムエラー、処理継続可能
+export const logSystemError = (error: Error, context: Record<string, unknown>) => {
+  logger.error('Database connection failed', {
+    error: error.message,
+    stack: error.stack,
+    context: maskSensitiveData(context),
+    timestamp: new Date().toISOString(),
+  })
+}
+
+// WARN: 警告、注意が必要
+export const logWarning = (message: string, context: Record<string, unknown>) => {
+  logger.warn('Rate limit approaching 80%', {
+    currentRequests: context.currentRequests,
+    limit: context.limit,
+    userId: context.userId,  // ユーザーIDは通常マスク不要
+    ip: maskIpAddress(context.ip),  // IPアドレスはマスク
+  })
+}
+
+// INFO: 一般的な情報、ビジネスイベント
+export const logBusinessEvent = (event: string, context: Record<string, unknown>) => {
+  logger.info('Inventory item created successfully', {
+    event: 'ITEM_CREATED',
+    itemId: context.itemId,
+    organizationId: context.organizationId,
+    userId: context.userId,
+    itemName: context.itemName,
+    category: context.category,
+  })
+}
+
+// DEBUG: 開発時のデバッグ情報
+export const logDebugInfo = (message: string, data: Record<string, unknown>) => {
+  logger.debug('Function input validation', {
+    functionName: 'createInventoryItem',
+    input: {
+      name: data.name,
+      quantity: data.quantity,
+      // パスワードやトークンは絶対にログ出力しない
+      organizationId: data.organizationId,
+    },
+    validationResult: data.validationResult,
+  })
+}
+
+// TRACE: 最も詳細なトレース情報
+export const logTrace = (message: string, details: Record<string, unknown>) => {
+  logger.debug('Database query execution', {  // winstonではtraceがないためdebugを使用
+    query: details.query,
+    parameters: maskSensitiveData(details.parameters),
+    executionTime: details.executionTime,
+    resultCount: details.resultCount,
+    connectionPoolSize: details.connectionPoolSize,
+  })
+}
+
+// 機密情報マスキング関数
+const maskSensitiveData = (data: Record<string, unknown>): Record<string, unknown> => {
+  const sensitiveKeys = ['password', 'token', 'secret', 'key', 'auth', 'credential']
+  const masked = { ...data }
+  
+  Object.keys(masked).forEach(key => {
+    const lowerKey = key.toLowerCase()
+    if (sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))) {
+      masked[key] = maskSecret(String(masked[key]))
+    }
+  })
+  
+  return masked
+}
+
+const maskIpAddress = (ip: string): string => {
+  const parts = ip.split('.')
+  if (parts.length === 4) {
+    return `${parts[0]}.${parts[1]}.***.**`
+  }
+  return '***.***.***.**'
+}
+
+// ✅ 実際の使用例: レイヤー別ログ出力パターン
+
+// ドメイン層でのログ出力（ビジネスロジック中心）
+export class InventoryItem {
+  public consume(amount: number, reason?: string): Result<ConsumptionRecord, ConsumeError> {
+    // TRACE: 詳細なビジネスロジックフロー
+    logger.debug('Starting item consumption', {
+      itemId: this.id,
+      currentQuantity: this.quantity,
+      requestedAmount: amount,
+      reason,
+    })
+    
+    if (amount <= 0) {
+      // WARN: ビジネスルール違反の警告
+      logger.warn('Invalid consumption amount requested', {
+        itemId: this.id,
+        requestedAmount: amount,
+        reason: 'Amount must be positive',
+      })
+      return err('INVALID_AMOUNT')
+    }
+    
+    if (amount > this.quantity) {
+      // WARN: 在庫不足の警告
+      logger.warn('Insufficient inventory for consumption', {
+        itemId: this.id,
+        availableQuantity: this.quantity,
+        requestedAmount: amount,
+      })
+      return err('INSUFFICIENT_QUANTITY')
+    }
+    
+    const record = new ConsumptionRecord(this.id, amount, reason, new Date())
+    this.quantity -= amount
+    
+    // INFO: 成功したビジネスイベント
+    logger.info('Item consumed successfully', {
+      event: 'ITEM_CONSUMED',
+      itemId: this.id,
+      consumedAmount: amount,
+      remainingQuantity: this.quantity,
+      reason,
+    })
+    
+    return ok(record)
+  }
+}
+
+// アプリケーション層でのログ出力（ユースケース中心）
+export const createInventoryItemUseCase = async (
   request: CreateInventoryItemRequest
 ): Promise<Result<InventoryItem, CreateInventoryItemError>> => {
+  // DEBUG: ユースケース開始
+  logger.debug('CreateInventoryItem usecase started', {
+    organizationId: request.organizationId,
+    userId: request.userId,
+    itemName: request.name,
+  })
+  
   const validationResult = validateCreateRequest(request)
   if (validationResult.isErr()) {
+    // WARN: バリデーションエラー
+    logger.warn('Validation failed for create inventory item', {
+      errors: validationResult.error,
+      request: {
+        name: request.name,
+        organizationId: request.organizationId,
+        // 機密情報は含めない
+      }
+    })
     return err('VALIDATION_ERROR')
   }
+  
+  const saveResult = await inventoryRepository.save(request)
+  if (saveResult.isErr()) {
+    // ERROR: システムエラー
+    logger.error('Failed to save inventory item', {
+      error: saveResult.error,
+      organizationId: request.organizationId,
+      itemName: request.name,
+    })
+    return err('SAVE_FAILED')
+  }
+  
+  // INFO: 成功したビジネスイベント
+  logger.info('Inventory item created successfully', {
+    event: 'ITEM_CREATED',
+    itemId: saveResult.value.id,
+    organizationId: request.organizationId,
+    userId: request.userId,
+  })
+  
+  return ok(saveResult.value)
+}
 
-  try {
-    const item = await inventoryRepository.create(request)
-    return ok(item)
-  } catch (error) {
-    if (error instanceof PermissionError) {
-      return err('PERMISSION_DENIED')
+// インフラ層でのログ出力（技術的詳細中心）
+export class PrismaInventoryRepository implements InventoryRepository {
+  async save(item: InventoryItem): Promise<Result<InventoryItem, SaveError>> {
+    // TRACE: データベース操作の詳細
+    const startTime = performance.now()
+    
+    try {
+      logger.debug('Starting database save operation', {
+        itemId: item.id,
+        tableName: 'inventory_items',
+        operation: 'INSERT',
+      })
+      
+      const result = await this.prisma.inventoryItem.create({
+        data: this.toDto(item)
+      })
+      
+      const endTime = performance.now()
+      
+      // TRACE: パフォーマンス情報
+      logger.debug('Database save completed', {
+        itemId: item.id,
+        executionTime: `${(endTime - startTime).toFixed(2)}ms`,
+        recordId: result.id,
+      })
+      
+      return ok(this.toDomain(result))
+      
+    } catch (error) {
+      // ERROR: データベースエラー
+      logger.error('Database save operation failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        itemId: item.id,
+        operation: 'INSERT',
+        tableName: 'inventory_items',
+      })
+      
+      if (error instanceof PrismaClientKnownRequestError) {
+        return err('DATABASE_CONSTRAINT_VIOLATION')
+      }
+      return err('DATABASE_CONNECTION_ERROR')
     }
-    if (error instanceof DuplicateBarcodeError) {
-      return err('DUPLICATE_BARCODE')
-    }
-    throw error
   }
 }
 
-// neverthrowの場合はチェーンも許可（関数型スタイル）
-const validateAndCreate = (request: CreateInventoryItemRequest) =>
-  validateCreateRequest(request)
-    .andThen(() => inventoryRepository.create(request))
-    .mapErr(mapToCreateItemError)
-
-// ❌ 悪い例: 冗長なエラーハンドリング
-export async function createItem(request: any): Promise<any> {
+// コントローラー層でのログ出力（HTTP/API中心）
+export const createInventoryItemHandler = async (c: Context) => {
+  const requestId = crypto.randomUUID()
+  const startTime = performance.now()
+  
+  // INFO: API リクエスト開始
+  logger.info('API request received', {
+    requestId,
+    method: c.req.method,
+    path: c.req.path,
+    userAgent: c.req.header('user-agent'),
+    ip: maskIpAddress(c.req.header('x-forwarded-for') || 'unknown'),
+  })
+  
   try {
-    // 何をしているかわからない
-    return await repository.create(request);
+    const request = await c.req.json<CreateInventoryItemRequest>()
+    const result = await createInventoryItemUseCase.execute(request)
+    
+    if (result.isErr()) {
+      // WARN: ビジネスエラー（4xx系）
+      logger.warn('API request failed with business error', {
+        requestId,
+        error: result.error,
+        statusCode: getStatusCodeForError(result.error),
+      })
+      
+      return c.json({ error: getErrorMessage(result.error) }, getStatusCodeForError(result.error))
+    }
+    
+    const endTime = performance.now()
+    
+    // INFO: API リクエスト成功
+    logger.info('API request completed successfully', {
+      requestId,
+      statusCode: 201,
+      responseTime: `${(endTime - startTime).toFixed(2)}ms`,
+      createdItemId: result.value.id,
+    })
+    
+    return c.json(result.value, 201)
+    
   } catch (error) {
-    // 意味のないエラーメッセージ
-    throw new Error('Something went wrong');
+    // ERROR: システムエラー（5xx系）
+    logger.error('API request failed with system error', {
+      requestId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    })
+    
+    return c.json({ error: 'Internal server error' }, 500)
   }
 }
+
+// ❌ 悪い例: 不適切なログレベル使用
+logger.error('User clicked button')           // ❌ ERRORは技術的問題用
+logger.info('Database connection failed')     // ❌ INFOは重大エラー用でない
+logger.debug('User login successful')         // ❌ DEBUGはビジネスイベント用でない
+logger.warn('Function started execution')     // ❌ WARNは正常処理用でない
+
+// ❌ 悪い例: 機密情報の平文ログ出力
+logger.info('User authenticated', {
+  password: request.password,                  // ❌ 危険
+  token: jwtToken,                            // ❌ 危険
+  apiKey: config.API_KEY,                     // ❌ 危険
+})
+
+// ❌ 悪い例: 構造化されていないログ
+logger.info(`User ${userId} created item ${itemName}`)  // ❌ 検索・分析困難
+```
+
+### 型安全性規約（型アサーション禁止）
+
+#### 1. 型アサーション（as）の利用を極力なくす
+
+```typescript
+// ❌ 悪い例: 型アサーション（as）の使用
+const data = response.data as InventoryItem          // ❌ 実行時に型が保証されない
+const element = document.getElementById('form') as HTMLFormElement  // ❌ null可能性を無視
+const config = process.env as EnvironmentConfig      // ❌ バリデーションなし
+
+// ✅ 良い例: Zodバリデーションで型安全性を確保
+import { z } from 'zod'
+
+const InventoryItemSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  quantity: z.number().min(0),
+  expiryDate: z.date().optional(),
+})
+
+export const parseInventoryItem = (data: unknown): Result<InventoryItem, ValidationError> => {
+  try {
+    const validatedData = InventoryItemSchema.parse(data)  // ✅ 実行時バリデーション
+    return ok(validatedData)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return err(new ValidationError('Invalid inventory item data', error.errors))
+    }
+    return err(new ValidationError('Unknown validation error'))
+  }
+}
+
+// ✅ 良い例: 型ガードで安全な型絞り込み
+const isInventoryItem = (data: unknown): data is InventoryItem => {
+  return InventoryItemSchema.safeParse(data).success
+}
+
+export const processApiResponse = (response: unknown) => {
+  if (isInventoryItem(response)) {
+    // ここではresponseがInventoryItem型として扱える
+    console.log(`Processing item: ${response.name}`)
+    return response
+  }
+  
+  throw new Error('Invalid response format')
+}
+
+// ✅ 良い例: DOM要素の安全な取得
+export const getFormElement = (id: string): Result<HTMLFormElement, DOMError> => {
+  const element = document.getElementById(id)
+  
+  if (!element) {
+    return err('ELEMENT_NOT_FOUND')
+  }
+  
+  if (!(element instanceof HTMLFormElement)) {
+    return err('ELEMENT_NOT_FORM')
+  }
+  
+  return ok(element)  // ✅ 型安全にHTMLFormElementを返す
+}
+
+// ✅ 良い例: 環境変数の型安全な取得（既存パターンの再確認）
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']),
+  PORT: z.coerce.number(),
+  DATABASE_URL: z.string().url(),
+})
+
+export const getEnvironmentConfig = (): EnvironmentConfig => {
+  return envSchema.parse(process.env)  // ✅ as使わずにバリデーション
+}
+```
+
+#### 2. 許可される型アサーション（例外的ケース）
+
+```typescript
+// ✅ 例外的に許可: const assertions（リテラル型の保持）
+export const createNotification = (userId: UserId, itemId: InventoryItemId) => {
+  return {
+    userId,
+    type: 'ITEM_CREATED' as const,  // ✅ リテラル型保持のためのconst assertion
+    data: { itemId, timestamp: new Date() }
+  }
+}
+
+// ✅ 例外的に許可: タプル型の保持
+export const useLocalStorage = <T>(key: string, initialValue: T) => {
+  const [value, setValue] = useState<T>(initialValue)
+  
+  const updateValue = (newValue: T | ((prev: T) => T)) => {
+    // 実装...
+  }
+  
+  return [value, updateValue] as const  // ✅ タプル型保持のため
+}
+
+// ✅ 例外的に許可: unknown から既知の型への安全な変換（バリデーション後）
+export const parseJsonSafely = <T>(
+  json: string, 
+  schema: z.ZodSchema<T>
+): Result<T, ParseError> => {
+  try {
+    const parsed = JSON.parse(json) as unknown  // ✅ まずunknownに変換
+    const validated = schema.parse(parsed)      // ✅ Zodでバリデーション
+    return ok(validated)
+  } catch (error) {
+    return err('PARSE_ERROR')
+  }
+}
+```
+
+#### 3. 型アサーション回避パターン
+
+```typescript
+// ❌ 悪い例: APIレスポンスの直接アサーション
+export const fetchInventoryItem = async (id: string) => {
+  const response = await fetch(`/api/items/${id}`)
+  const data = await response.json() as InventoryItem  // ❌ 危険
+  return data
+}
+
+// ✅ 良い例: APIレスポンスの安全な処理
+export const fetchInventoryItem = async (
+  id: string
+): Promise<Result<InventoryItem, FetchError>> => {
+  try {
+    const response = await fetch(`/api/items/${id}`)
+    
+    if (!response.ok) {
+      return err('FETCH_FAILED')
+    }
+    
+    const data = await response.json()
+    const parseResult = parseInventoryItem(data)  // ✅ Zodバリデーション使用
+    
+    if (parseResult.isErr()) {
+      return err('INVALID_RESPONSE_FORMAT')
+    }
+    
+    return ok(parseResult.value)
+  } catch (error) {
+    return err('NETWORK_ERROR')
+  }
+}
+
+// ❌ 悪い例: 配列要素の直接アサーション
+export const processFirstItem = (items: unknown[]) => {
+  const firstItem = items[0] as InventoryItem  // ❌ 危険
+  return firstItem.name
+}
+
+// ✅ 良い例: 配列要素の安全な処理
+export const processFirstItem = (
+  items: unknown[]
+): Result<string, ProcessError> => {
+  if (items.length === 0) {
+    return err('EMPTY_ARRAY')
+  }
+  
+  const parseResult = parseInventoryItem(items[0])
+  if (parseResult.isErr()) {
+    return err('INVALID_FIRST_ITEM')
+  }
+  
+  return ok(parseResult.value.name)
+}
+
+// ❌ 悪い例: イベント対象要素の直接アサーション
+export const handleFormSubmit = (event: Event) => {
+  const form = event.target as HTMLFormElement  // ❌ 危険
+  const formData = new FormData(form)
+}
+
+// ✅ 良い例: イベント対象要素の安全な処理
+export const handleFormSubmit = (event: Event): Result<FormData, FormError> => {
+  const { target } = event
+  
+  if (!(target instanceof HTMLFormElement)) {
+    return err('TARGET_NOT_FORM')
+  }
+  
+  return ok(new FormData(target))  // ✅ 型安全
+}
+
+// ❌ 悪い例: オブジェクトプロパティの直接アサーション
+export const extractUserInfo = (data: any) => {
+  const user = data.user as User  // ❌ 危険
+  return { id: user.id, name: user.name }
+}
+
+// ✅ 良い例: オブジェクトプロパティの安全な処理
+const UserSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  email: z.string().email(),
+})
+
+export const extractUserInfo = (
+  data: unknown
+): Result<{ id: string; name: string }, ExtractionError> => {
+  const dataSchema = z.object({
+    user: UserSchema
+  })
+  
+  const parseResult = dataSchema.safeParse(data)
+  if (!parseResult.success) {
+    return err('INVALID_USER_DATA')
+  }
+  
+  const { user } = parseResult.data
+  return ok({ id: user.id, name: user.name })
+}
+```
+
+#### 4. 型推論の活用
+
+```typescript
+// ✅ 良い例: TypeScriptの型推論を最大限活用
+export const createInventoryService = (repository: InventoryRepository) => {
+  return {
+    // TypeScriptが自動的に型を推論
+    async createItem(request: CreateInventoryItemRequest) {
+      const validationResult = await validateRequest(request)
+      if (validationResult.isErr()) {
+        return validationResult  // Result<never, ValidationError>として推論
+      }
+      
+      return await repository.save(validationResult.value)  // 型推論で安全
+    },
+    
+    async findById(id: InventoryItemId) {
+      return await repository.findById(id)  // 戻り値型が自動推論
+    }
+  }
+}
+
+// 型推論により、以下のように型安全に使用可能
+const service = createInventoryService(prismaRepository)
+// service.createItemの戻り値型は自動的にPromise<Result<InventoryItem, CreateError>>
+// service.findByIdの戻り値型は自動的にPromise<InventoryItem | null>
 ```
 
 ### 非同期処理規約（async/await優先）
@@ -933,9 +1690,13 @@ export const calculateExpiryStatus = ({
   return 'SAFE'
 } // ✅ 20行 - 25行以内でOK
 
-// 分割代入で複数の値を返す
-export const parseInventoryItem = (data: unknown) => {
-  const { id, name, quantity, expiryDate } = data as RawInventoryData
+// 分割代入で複数の値を返す（型安全版）
+export const parseInventoryItem = (data: unknown): Result<ParsedInventoryData, ValidationError> => {
+  const parseResult = RawInventoryDataSchema.safeParse(data)
+  if (!parseResult.success) {
+    return err(new ValidationError('Invalid data format'))
+  }
+  const { id, name, quantity, expiryDate } = parseResult.data
   const isValid = id && name && quantity >= 0
   
   return { 
@@ -1576,7 +2337,7 @@ export const useLocalStorage = <T>(key: string, defaultValue: T) => {
   const setStoredValue = useCallback((newValue: T | ((prevValue: T) => T)) => {
     setValue(prev => {
       const valueToStore = typeof newValue === 'function' 
-        ? (newValue as (prevValue: T) => T)(prev)
+        ? (newValue as (prevValue: T) => T)(prev)  // ✅ 例外: 関数型判定後の安全なアサーション
         : newValue
 
       try {
@@ -1630,19 +2391,24 @@ export const UseDebounce = () => {                          // ❌ PascalCase
 }
 ```
 
-## Flutter/Dart コード規約
+## React Native コード規約
 
 ### ファイル・ディレクトリ命名規則
 
-```dart
+```typescript
 // ✅ 良い例
-// ファイル名: snake_case
-inventory_item.dart
-user_authentication_service.dart
-organization_member_entity.dart
+// ファイル名: kebab-case
+inventory-item.ts
+user-authentication-service.ts
+organization-member-entity.ts
 
-// ディレクトリ名: snake_case
-lib/
+// Reactコンポーネント: PascalCase
+InventoryItemCard.tsx
+UserProfileForm.tsx
+OrganizationMemberList.tsx
+
+// ディレクトリ名: kebab-case
+src/
 ├── core/
 │   ├── constants/
 │   ├── errors/
@@ -1656,9 +2422,11 @@ lib/
 │   ├── repositories/
 │   └── usecases/
 └── presentation/
-    ├── pages/
-    ├── widgets/
-    └── providers/
+    ├── screens/
+    ├── components/
+    ├── navigation/
+    ├── hooks/
+    └── store/
 ```
 
 ### クラス・関数定義規約
@@ -2130,9 +2898,9 @@ export class InventoryGrpcService {
 }
 ```
 
-```dart
-// ✅ 良い例: Flutter Hono RPCクライアント
-class InventoryRepositoryImpl implements InventoryRepository {
+```typescript
+// ✅ 良い例: React Native Hono RPCクライアント
+export class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<Either<InventoryFailure, InventoryItem>> createItem(
     CreateInventoryItemRequest request,
@@ -2785,7 +3553,7 @@ describe('InventoryService Integration Test', () => {
 })
 ```
 
-### Flutter テスト規約（Given-When-Then + Rails風ネスト構造 + 1 expect per test）
+### React Native テスト規約（Given-When-Then + Jest/Testing Library）
 
 ```dart
 // ✅ 良い例: Given-When-Then形式 + 1つのtestWidgetsに1つのexpect (RSpec風)
@@ -2895,7 +3663,7 @@ fix(auth): resolve token refresh issue
 docs(api): update gRPC service documentation
 test(inventory): add unit tests for InventoryItem entity
 refactor(database): optimize inventory query performance
-chore(deps): update Flutter dependencies
+chore(deps): update React Native dependencies
 
 # 詳細な例
 feat(inventory): implement expiry date management
@@ -3000,10 +3768,112 @@ export class BadInventoryRepository {
 }
 ```
 
-```dart
-// ✅ 良い例: Flutter パフォーマンス最適化
-class InventoryListWidget extends ConsumerWidget {
-  @override
+```typescript
+// ✅ 良い例: React Native パフォーマンス最適化
+export const InventoryListScreen: React.FC = () => {
+  const { items, isLoading, error, fetchItems } = useInventoryStore();
+  const [refreshing, setRefreshing] = useState(false);
+  
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await fetchItems('current-org-id');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchItems]);
+  
+  const renderItem = useCallback(({ item }: { item: InventoryItem }) => (
+    <InventoryItemCard
+      key={item.id}
+      item={item}
+      onPress={() => navigation.navigate('ItemDetail', { itemId: item.id })}
+    />
+  ), [navigation]);
+  
+  if (isLoading && !refreshing) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity onPress={() => fetchItems('current-org-id')}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  
+  return (
+    <FlatList
+      data={items}
+      renderItem={renderItem}
+      keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+      contentContainerStyle={styles.container}
+      // パフォーマンス最適化
+      removeClippedSubviews={true}
+      maxToRenderPerBatch={10}
+      windowSize={10}
+      initialNumToRender={10}
+      getItemLayout={(data, index) => ({
+        length: 120,
+        offset: 120 * index,
+        index,
+      })}
+    />
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    padding: 16,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorText: {
+    color: 'red',
+    marginBottom: 16,
+  },
+  retryText: {
+    color: 'blue',
+    textDecorationLine: 'underline',
+  },
+});
+
+// ❌ 悪い例: パフォーマンスを考慮しない実装
+export const BadInventoryListScreen: React.FC = () => {
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  
+  // 毎回再レンダリングで新しい関数を作成（パフォーマンス悪化）
+  const renderItem = ({ item }: { item: InventoryItem }) => (
+    <View>
+      <Text>{item.name}</Text>
+      {/* 重い処理を含むコンポーネント */}
+      <ExpensiveComponent item={item} />
+    </View>
+  );
+  
+  return (
+    <FlatList
+      data={items}
+      renderItem={renderItem}
+      // keyExtractorなし（パフォーマンス悪化）
+      // 最適化設定なし
+    />
+  );
+}
   Widget build(BuildContext context, WidgetRef ref) {
     final inventoryItems = ref.watch(inventoryItemsProvider);
 
@@ -3144,6 +4014,675 @@ export class BadInventoryService {
   }
 }
 ```
+
+### GitHub Issue ワークフロー規約（Design Doc活用）
+
+#### 1. 基本方針
+
+- **すべてのタスクはGitHub Issueで管理**
+- **Design Docとして Issue を活用**
+- **「何をどうやって対応したか、解決したか」をIssueコメントで詳細記録**
+
+#### 2. Issue作成・管理パターン
+
+```markdown
+# Issue テンプレート例
+
+## 📋 概要
+備蓄品管理サービスの認証機能実装
+
+## 🎯 目的・背景
+- ユーザーが安全にシステムにログインできる機能が必要
+- JWT トークンベースの認証システムを構築
+- 組織レベルでの権限管理を実現
+
+## 📝 要件定義
+### 機能要件
+- [ ] ユーザー登録機能
+- [ ] ログイン・ログアウト機能  
+- [ ] JWT トークン管理（15分有効期限）
+- [ ] リフレッシュトークン機能（7日有効期限）
+- [ ] パスワードリセット機能
+
+### 非機能要件
+- [ ] セキュリティ：パスワードハッシュ化（bcrypt）
+- [ ] パフォーマンス：トークン検証 < 100ms
+- [ ] 可用性：99.9%稼働率
+- [ ] ログ：認証関連の監査ログ記録
+
+## 🏗️ 技術設計
+### アーキテクチャ
+- Clean Architecture + DDD パターン適用
+- Hono + Hono RPC による API 実装
+- neverthrow Result型でエラーハンドリング
+
+### API設計
+```typescript
+// POST /auth/register
+type RegisterRequest = {
+  email: string
+  password: string  
+  organizationCode?: string
+}
+
+type RegisterResponse = Result<{
+  user: User
+  tokens: TokenPair
+}, RegisterError>
+```
+
+### データベース設計
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+## 🧪 テスト計画
+### 単体テスト（*.spec.ts）
+- [ ] パスワードハッシュ化機能テスト
+- [ ] JWT トークン生成・検証テスト
+- [ ] バリデーション関数テスト
+
+### 結合テスト（*.test.ts）
+- [ ] 認証 API エンドポイントテスト
+- [ ] データベース連携テスト
+- [ ] トークンリフレッシュフローテスト
+
+## 📈 完了基準
+- [ ] すべての機能要件が実装済み
+- [ ] 単体テストカバレッジ 90% 以上
+- [ ] 結合テストが全て通過
+- [ ] セキュリティレビュー完了
+- [ ] パフォーマンステスト通過
+- [ ] ドキュメント更新完了
+
+## 📚 関連リソース
+- [認証設計書](link)  
+- [API仕様書](link)
+- [セキュリティガイドライン](link)
+
+---
+
+## 📝 実装ログ（解決過程の記録）
+
+### 2024-01-15 - 初期設計完了
+**実施内容:**
+- Clean Architecture の層構造設計
+- Domain層: User、AuthenticationService エンティティ設計
+- Application層: RegisterUserUseCase、LoginUserUseCase 設計  
+- Infrastructure層: PrismaUserRepository、BcryptPasswordService 設計
+
+**設計決定:**
+- パスワードハッシュ化にbcrypt採用（コスト12）
+- JWT有効期限：Access Token 15分、Refresh Token 7日
+- 組織招待コードによる登録フロー採用
+
+**課題・検討事項:**
+- 組織招待コードの衝突回避方法
+- パスワード強度ポリシーの具体化
+
+### 2024-01-16 - Domain層実装完了  
+**実施内容:**
+```typescript
+// User エンティティ実装
+export class User {
+  constructor(
+    private readonly _id: UserId,
+    private readonly _email: Email,
+    private readonly _passwordHash: PasswordHash,
+    private _emailVerified: boolean = false
+  ) {}
+
+  public static create(props: CreateUserProps): Result<User, UserCreationError> {
+    // バリデーション + ドメインルール実装
+  }
+}
+
+// 認証サービス実装  
+export class AuthenticationService {
+  public async authenticate(
+    email: Email, 
+    password: Password
+  ): Promise<Result<TokenPair, AuthenticationError>> {
+    // 認証ロジック実装
+  }
+}
+```
+
+**解決した課題:**
+- PasswordHashをOpaque型で実装し、型安全性確保
+- Emailドメイン検証ロジックをvalue objectで実装
+- User作成時のドメインルール（重複チェック等）実装
+
+**テスト結果:**
+- Domain層単体テスト：35/35 通過 ✅
+- テストカバレッジ：96%
+
+### 2024-01-17 - Application層実装完了
+**実施内容:**
+```typescript
+// ユーザー登録ユースケース実装
+export const registerUserUseCase = async (
+  request: RegisterUserRequest
+): Promise<Result<RegisterUserResponse, RegisterUserError>> => {
+  // 1. バリデーション
+  const validationResult = validateRegisterRequest(request)
+  if (validationResult.isErr()) {
+    return err('VALIDATION_ERROR')
+  }
+
+  // 2. 重複チェック
+  const existingUser = await userRepository.findByEmail(request.email)
+  if (existingUser) {
+    return err('EMAIL_ALREADY_EXISTS')
+  }
+
+  // 3. パスワードハッシュ化
+  const passwordHashResult = await passwordService.hash(request.password)
+  if (passwordHashResult.isErr()) {
+    return err('PASSWORD_HASH_FAILED')
+  }
+
+  // 4. ユーザー作成
+  const userResult = User.create({
+    email: request.email,
+    passwordHash: passwordHashResult.value
+  })
+  
+  if (userResult.isErr()) {
+    return err('USER_CREATION_FAILED')
+  }
+
+  // 5. 永続化
+  const saveResult = await userRepository.save(userResult.value)
+  if (saveResult.isErr()) {
+    return err('SAVE_FAILED')
+  }
+
+  return ok({ user: userResult.value })
+}
+```
+
+**解決した課題:**
+- neverthrow Result型による一貫したエラーハンドリング実装
+- 組織招待コード検証ロジック実装
+- メール重複チェックの競合状態対策（DBレベル制約 + アプリケーションレベルチェック）
+
+**テスト結果:**  
+- Application層単体テスト：28/28 通過 ✅
+- エラーケーステスト：15/15 通過 ✅
+
+### 2024-01-18 - Infrastructure層実装完了
+**実施内容:**
+```typescript
+// Prisma Repository実装
+export class PrismaUserRepository implements UserRepository {
+  async save(user: User): Promise<Result<User, SaveUserError>> {
+    try {
+      const userData = this.toDto(user)
+      const result = await this.prisma.user.create({
+        data: userData
+      })
+      return ok(this.toDomain(result))
+    } catch (error) {
+      if (error instanceof PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          return err('EMAIL_ALREADY_EXISTS')
+        }
+      }
+      logger.error('User save failed', { error, userId: user.id })
+      return err('DATABASE_ERROR')
+    }
+  }
+}
+
+// Bcrypt Password Service実装
+export class BcryptPasswordService implements PasswordService {
+  private readonly COST = 12
+
+  async hash(password: Password): Promise<Result<PasswordHash, HashError>> {
+    try {
+      const hash = await bcrypt.hash(password.value, this.COST)
+      return ok(PasswordHash.create(hash))
+    } catch (error) {
+      logger.error('Password hashing failed', { error })
+      return err('HASH_FAILED')
+    }
+  }
+}
+```
+
+**解決した課題:**
+- Prisma制約違反エラーの適切なハンドリング
+- bcryptコスト最適化（性能テスト実施：12で約150ms）
+- データベース接続プール設定最適化
+
+**パフォーマンステスト結果:**
+- ユーザー登録API：平均応答時間 180ms ✅（目標 < 500ms）
+- ログインAPI：平均応答時間 95ms ✅（目標 < 100ms）
+
+### 2024-01-19 - API層実装・テスト完了
+**実施内容:**
+```typescript
+// Hono RPC ハンドラー実装
+export const registerUserHandler = async (c: Context) => {
+  const requestId = crypto.randomUUID()
+  
+  logger.info('User registration request received', {
+    requestId,
+    ip: maskIpAddress(c.req.header('x-forwarded-for')),
+  })
+  
+  try {
+    const request = await c.req.json<RegisterUserRequest>()
+    const result = await registerUserUseCase.execute(request)
+    
+    if (result.isErr()) {
+      logger.warn('User registration failed', {
+        requestId,
+        error: result.error,
+        email: maskEmail(request.email),
+      })
+      
+      switch (result.error) {
+        case 'VALIDATION_ERROR':
+          return c.json({ error: 'Invalid request data' }, 400)
+        case 'EMAIL_ALREADY_EXISTS':
+          return c.json({ error: 'Email already registered' }, 409)
+        default:
+          return c.json({ error: 'Registration failed' }, 500)
+      }
+    }
+    
+    logger.info('User registration successful', {
+      requestId,
+      userId: result.value.user.id,
+      email: maskEmail(request.email),
+    })
+    
+    return c.json(result.value, 201)
+    
+  } catch (error) {
+    logger.error('User registration system error', {
+      requestId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    })
+    
+    return c.json({ error: 'Internal server error' }, 500)
+  }
+}
+```
+
+**解決した課題:**
+- リクエストID による処理追跡可能性確保
+- 機密情報（メール、IP）の適切なマスキング
+- Honoフレームワークでの一貫したエラーハンドリング
+
+**最終テスト結果:**
+- 単体テスト：98/98 通過 ✅ (カバレッジ 94%)
+- 結合テスト：45/45 通過 ✅
+- E2Eテスト：12/12 通過 ✅
+- セキュリティテスト：SQLインジェクション、XSS対策確認 ✅
+- パフォーマンステスト：全API目標値クリア ✅
+
+### 2024-01-20 - 完了・デプロイ
+**実施内容:**
+- Railway環境へのデプロイ
+- 本番環境での疎通確認
+- 監視設定（Grafana Stack）
+- ドキュメント更新
+
+**完了確認:**
+- ✅ 全機能要件実装完了  
+- ✅ 全非機能要件達成
+- ✅ テスト完了（カバレッジ目標達成）
+- ✅ セキュリティレビュー完了
+- ✅ パフォーマンステスト合格
+- ✅ 本番デプロイ完了
+
+**今後の改善点:**
+- OAuth2.0対応（Google、GitHub認証）
+- 多要素認証（MFA）対応
+- セッション管理の最適化
+```
+
+#### 3. Issue活用パターン
+
+**設計フェーズ**:
+- 要件定義、技術選択、アーキテクチャ設計をIssue内で議論
+- 代替案の比較検討をコメントで記録
+- 決定事項と根拠を明確に文書化
+
+**実装フェーズ**:  
+- 実装過程の課題・解決策をリアルタイムで記録
+- コードスニペットによる具体的な実装内容の共有
+- テスト結果・パフォーマンス測定結果の記録
+
+**完了フェーズ**:
+- 最終的な成果物の確認
+- 学んだ教訓・改善点の記録
+- 次のタスクへの引き継ぎ事項
+
+#### 4. Issue管理規約
+
+```markdown
+# ラベル体系
+- `type/feature` - 新機能開発
+- `type/bug` - バグ修正  
+- `type/refactor` - リファクタリング
+- `type/docs` - ドキュメント更新
+- `priority/high` - 高優先度
+- `priority/medium` - 中優先度  
+- `priority/low` - 低優先度
+- `status/in-progress` - 作業中
+- `status/review` - レビュー待ち
+- `status/blocked` - ブロック状態
+
+# マイルストーン活用
+- Phase 1: Foundation Setup
+- Phase 2: Core Services  
+- Phase 3: UI/UX Implementation
+- Phase 4: Quality & Operations
+
+# アサイン規則
+- 必ず担当者をアサイン
+- 複数人での協業の場合は全員をアサイン
+- レビュワーもアサインに含める
+```
+
+#### 5. 禁止事項
+
+```markdown
+❌ 禁止される Issue 管理パターン:
+
+- 実装過程の記録を残さないまま完了
+- 課題・解決策の詳細を記録せずクローズ
+- 設計変更の根拠を記載しない
+- テスト結果・パフォーマンス測定を記録しない
+- 学んだ教訓・改善点を残さない
+- コードレビューでの指摘事項を記録しない
+```
+
+この規約により、すべての開発過程が追跡可能となり、将来の類似タスクの参考資料として価値の高いナレッジベースを構築できます。
+
+### Linter規約（disable最小化）
+
+#### 1. 基本方針
+
+- **linterのdisableは極力なくす**
+- **disable が必要な場合は設定ファイル自体を変更**
+- **インラインdisableは禁止（例外的な場合のみ許可）**
+
+#### 2. 禁止されるパターン
+
+```typescript
+// ❌ 禁止: インラインでのlinter disable
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const processData = (data: any) => {  // ❌ 危険
+  return data.someProperty
+}
+
+// ❌ 禁止: 単一行でのdisable
+const result = eval(userInput)  // eslint-disable-line no-eval
+
+// ❌ 禁止: ブロックでのdisable  
+/* eslint-disable no-console */
+console.log('Debug info')
+console.log('More debug info')
+/* eslint-enable no-console */
+
+// ❌ 禁止: Biome規則のインラインdisable
+// biome-ignore lint/suspicious/noExplicitAny: legacy code
+const legacyData: any = getLegacyData()  // ❌ 改修すべき
+
+// ❌ 禁止: 複数規則の一括disable
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment */
+const unsafeCode = someFunction()  // ❌ 根本的解決が必要
+```
+
+#### 3. 適切な解決パターン
+
+```typescript
+// ✅ 良い例: 設定ファイルでプロジェクト全体に適用
+// biome.json
+{
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noExplicitAny": "warn",  // エラーからワーニングに変更
+        "noConsoleLog": "off"     // 開発段階では無効化
+      }
+    }
+  }
+}
+
+// ✅ 良い例: 型定義で根本解決
+// ❌ 以前: const data: any = response.data
+// ✅ 改善後: 
+const ResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  items: z.array(z.object({
+    id: z.string(),
+    quantity: z.number()
+  }))
+})
+
+export const processResponse = (data: unknown): Result<ProcessedData, ValidationError> => {
+  const parseResult = ResponseSchema.safeParse(data)
+  if (!parseResult.success) {
+    return err(new ValidationError('Invalid response format'))
+  }
+  return ok(parseResult.data)  // ✅ 型安全
+}
+
+// ✅ 良い例: デバッグログの適切な実装
+// ❌ 以前: console.log(debugInfo)  // eslint-disable-line no-console
+// ✅ 改善後:
+import { logger } from '@repo/logger'
+
+export const processInventoryItem = (item: InventoryItem) => {
+  logger.debug('Processing inventory item', {  // ✅ 適切なログレベル
+    itemId: item.id,
+    name: item.name,
+    quantity: item.quantity
+  })
+  
+  // 処理続行...
+}
+
+// ✅ 良い例: 安全なeval代替
+// ❌ 以前: const result = eval(expression)  // eslint-disable-line no-eval
+// ✅ 改善後:
+import { Function } from 'vm2'  // 安全なJavaScript実行環境
+
+export const evaluateExpression = (expression: string): Result<number, EvaluationError> => {
+  try {
+    const vm = new Function(`return ${expression}`)
+    const result = vm()
+    
+    if (typeof result !== 'number') {
+      return err('INVALID_RESULT_TYPE')
+    }
+    
+    return ok(result)
+  } catch (error) {
+    return err('EVALUATION_FAILED')
+  }
+}
+
+// ✅ 良い例: 外部ライブラリ型定義の適切な対応
+// ❌ 以前: const plugin = require('legacy-plugin') as any
+// ✅ 改善後: 型定義ファイルを作成
+// types/legacy-plugin.d.ts
+declare module 'legacy-plugin' {
+  export interface PluginConfig {
+    apiKey: string
+    timeout: number
+  }
+  
+  export class LegacyPlugin {
+    constructor(config: PluginConfig)
+    process(data: unknown): Promise<ProcessResult>
+  }
+  
+  export default LegacyPlugin
+}
+
+// 使用箇所
+import LegacyPlugin from 'legacy-plugin'  // ✅ 型安全
+
+const plugin = new LegacyPlugin({
+  apiKey: config.PLUGIN_API_KEY,
+  timeout: 5000
+})
+```
+
+#### 4. 設定ファイル変更パターン
+
+```json
+// ✅ 良い例: biome.json での適切な設定調整
+{
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "warn",              // 段階的改善のためワーニング
+        "noConsoleLog": "off"                 // 開発時は許可
+      },
+      "style": {
+        "useConst": "error",                  // constの使用を強制
+        "useShorthandArrayType": "warn"       // T[]形式を推奨
+      },
+      "correctness": {
+        "noUnusedVariables": "error",         // 未使用変数は厳格にチェック
+        "noUnreachableCode": "error"          // 到達不可能コードを厳格チェック
+      },
+      "complexity": {
+        "noForEach": "off",                   // forEachの使用を許可（プロジェクト方針）
+        "useLiteralKeys": "warn"              // リテラルキー使用を推奨
+      }
+    }
+  },
+  "files": {
+    "ignore": [
+      "dist/**",
+      "node_modules/**",
+      "**/*.generated.ts",                    // 自動生成ファイルは除外
+      "**/migrations/**/*.sql"                // マイグレーションファイルは除外
+    ]
+  }
+}
+
+// ✅ 良い例: package.json での環境別設定
+{
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "lint:ci": "biome ci .",
+    "lint:dev": "biome check --config-path ./biome.dev.json ."
+  }
+}
+
+// biome.dev.json（開発環境用）
+{
+  "extends": "./biome.json",
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noConsoleLog": "off",                // 開発時はconsole.log許可
+        "noDebugger": "warn"                  // debuggerはワーニング
+      }
+    }
+  }
+}
+
+// biome.prod.json（本番環境用）  
+{
+  "extends": "./biome.json",
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noConsoleLog": "error",              // 本番では厳格
+        "noDebugger": "error",                // debuggerは絶対禁止
+        "noExplicitAny": "error"              // any型は厳格チェック
+      }
+    }
+  }
+}
+```
+
+#### 5. 例外的にdisableが許可されるケース
+
+```typescript
+// ✅ 例外的に許可: サードパーティライブラリの型問題（一時的）
+// 理由をコメントで明記し、Issue番号を記載
+/* eslint-disable @typescript-eslint/no-explicit-any -- 
+ * TODO: Fix in #123 - legacy-lib has no type definitions
+ * Remove this disable once types are available
+ */
+import legacyLib from 'legacy-lib'
+
+// ✅ 例外的に許可: テストコードでのみ（限定的）
+// テスト固有の制約がある場合のみ
+describe('Error handling', () => {
+  it('should handle network errors', () => {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    // 理由: テストでは意図的にPromiseを無視してエラーをテスト
+    networkService.unreliableCall()
+    
+    expect(errorHandler.lastError).toBeDefined()
+  })
+})
+
+// ✅ 例外的に許可: 自動生成コードファイル
+// ファイル全体で一括disable（自動生成であることを明記）
+/* eslint-disable */
+// This file is auto-generated by Prisma Client
+// Do not edit manually - changes will be overwritten
+
+export const PrismaClient = {
+  // 自動生成されたコード...
+}
+```
+
+#### 6. 代替解決策の検討順序
+
+1. **設定ファイル変更**: ルール自体を調整・無効化
+2. **コード改善**: より良い実装パターンに変更
+3. **型定義追加**: 不足している型定義を補完
+4. **ライブラリ変更**: より型安全なライブラリに移行
+5. **最終手段**: 十分な理由とIssue番号付きでdisable
+
+#### 7. チームでの運用ルール
+
+```markdown
+## Linter Disable Review Process
+
+### Before Disable:
+1. 設定ファイル変更で解決できないか検討
+2. コード改善で根本解決できないか検討  
+3. 他の実装方法がないか検討
+
+### If Disable Required:
+1. GitHub Issueを作成（改善計画を記載）
+2. コメントでdisableの理由と期限を明記
+3. PR レビューで必ず確認・承認を得る
+4. 定期的にdisable箇所をレビュー・改善
+
+### Monitoring:
+- 月次でdisable箇所の棚卸し実施
+- 不要になったdisableの削除
+- 恒久的な解決策への移行検討
+```
+
+この規約により、コード品質を維持しながら、linter規則の適切な管理が実現されます。
 
 ## まとめ
 
