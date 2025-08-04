@@ -23,6 +23,7 @@
 - `function`より`const`によるアロー関数を推奨
 - コメントは最小限、型とシグネチャで意図を表現
 - セルフドキュメンティングコードを目指す
+- **ただし、if文やswitch文では必ずブロック`{}`を使用（可読性と安全性のため）**
 
 ### 4. テスト駆動開発（TDD）
 - すべての機能にテストを必須
@@ -107,14 +108,20 @@ export const createInventoryItem = async (
   request: CreateInventoryItemRequest
 ): Promise<Result<InventoryItem, CreateInventoryItemError>> => {
   const validationResult = validateCreateRequest(request)
-  if (validationResult.isErr()) return err('VALIDATION_ERROR')
+  if (validationResult.isErr()) {
+    return err('VALIDATION_ERROR')
+  }
 
   try {
     const item = await inventoryRepository.create(request)
     return ok(item)
   } catch (error) {
-    if (error instanceof PermissionError) return err('PERMISSION_DENIED')
-    if (error instanceof DuplicateBarcodeError) return err('DUPLICATE_BARCODE')
+    if (error instanceof PermissionError) {
+      return err('PERMISSION_DENIED')
+    }
+    if (error instanceof DuplicateBarcodeError) {
+      return err('DUPLICATE_BARCODE')
+    }
     throw error
   }
 }
@@ -139,7 +146,7 @@ export async function createItem(request: any): Promise<any> {
 ### 関数定義規約
 
 ```typescript
-// ✅ 良い例: const + アロー関数（推奨）
+// ✅ 良い例: const + アロー関数 + ブロック必須
 export const calculateExpiryStatus = (
   expiryDate: Date,
   currentDate = new Date()
@@ -148,20 +155,45 @@ export const calculateExpiryStatus = (
     (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
   )
 
-  if (daysUntilExpiry < 0) return 'EXPIRED'
-  if (daysUntilExpiry <= 3) return 'CRITICAL'
-  if (daysUntilExpiry <= 7) return 'WARNING'
-  if (daysUntilExpiry <= 30) return 'CAUTION'
+  // if文では必ずブロックを使用
+  if (daysUntilExpiry < 0) {
+    return 'EXPIRED'
+  }
+  if (daysUntilExpiry <= 3) {
+    return 'CRITICAL'
+  }
+  if (daysUntilExpiry <= 7) {
+    return 'WARNING'
+  }
+  if (daysUntilExpiry <= 30) {
+    return 'CAUTION'
+  }
   return 'SAFE'
 }
 
+// 三項演算子は単純な場合のみ許可
 const validateItemName = (name: string): Result<string, ValidationError> =>
   name.trim().length === 0 
     ? err(new ValidationError('Name cannot be empty'))
     : ok(name.trim())
 
-const calculateItemQuantity = (current: number, consumed: number) => 
-  Math.max(0, current - consumed)
+// switch文でも必ずブロックを使用
+const mapErrorCode = (error: string): number => {
+  switch (error) {
+    case 'NOT_FOUND': {
+      return 404
+    }
+    case 'UNAUTHORIZED': {
+      return 401
+    }
+    case 'BAD_REQUEST': {
+      return 400
+    }
+    default: {
+      return 500
+    }
+  }
+}
 
 // ❌ 悪い例: function宣言（必要な場合以外は避ける）
 function calculateExpiryStatus(expiryDate: Date): ExpiryStatus {
@@ -1008,19 +1040,27 @@ export class CreateInventoryItemUseCase {
     command: CreateInventoryItemCommand
   ): Promise<Result<InventoryItemDto, CreateInventoryItemError>> => {
     const organization = await this.organizationRepository.findById(command.organizationId)
-    if (!organization) return err('ORGANIZATION_NOT_FOUND')
-    if (!organization.hasWritePermission(command.userId)) return err('PERMISSION_DENIED')
+    if (!organization) {
+      return err('ORGANIZATION_NOT_FOUND')
+    }
+    if (!organization.hasWritePermission(command.userId)) {
+      return err('PERMISSION_DENIED')
+    }
 
     if (command.barcode) {
       const existingItem = await this.inventoryRepository.findByBarcode(
         command.organizationId,
         command.barcode
       )
-      if (existingItem) return err('DUPLICATE_BARCODE')
+      if (existingItem) {
+        return err('DUPLICATE_BARCODE')
+      }
     }
 
     const itemResult = InventoryItem.create(command)
-    if (itemResult.isErr()) return err('VALIDATION_ERROR')
+    if (itemResult.isErr()) {
+      return err('VALIDATION_ERROR')
+    }
 
     const item = itemResult.value
     await this.inventoryRepository.save(item)
@@ -1039,55 +1079,74 @@ export class CreateInventoryItemUseCase {
 
 ## テスト規約
 
-### 単体テスト規約（Given-When-Then + Rails風ネスト構造）
+### 単体テスト規約（Given-When-Then + Rails風ネスト構造 + 1 expect per it）
 
 ```typescript
-// ✅ 良い例: Given-When-Then形式のテスト構造
+// ✅ 良い例: Given-When-Then形式 + 1つのitに1つのexpect (RSpec風)
 describe('InventoryItem', () => {
   describe('Given valid props', () => {
+    const props: CreateInventoryItemProps = {
+      organizationId: OrganizationId.generate(),
+      name: 'Test Item',
+      category: InventoryCategory.FOOD,
+      quantity: 10,
+      unit: '個',
+      expiryType: ExpiryType.BEST_BEFORE,
+      bestBeforeDate: new Date('2024-12-31'),
+      tags: ['test', 'food'],
+    }
+    
     describe('When creating inventory item', () => {
+      let result: Result<InventoryItem, ValidationError>
+      
+      beforeEach(() => {
+        result = InventoryItem.create(props)
+      })
+      
       describe('Then should create item successfully', () => {
-        it('returns ok result with created item', () => {
-          const props: CreateInventoryItemProps = {
-            organizationId: OrganizationId.generate(),
-            name: 'Test Item',
-            category: InventoryCategory.FOOD,
-            quantity: 10,
-            unit: '個',
-            expiryType: ExpiryType.BEST_BEFORE,
-            bestBeforeDate: new Date('2024-12-31'),
-            tags: ['test', 'food'],
-          }
-
-          const result = InventoryItem.create(props)
-
+        it('returns ok result', () => {
           expect(result.isOk()).toBe(true)
-          const item = result.value
-          expect(item.name).toBe('Test Item')
-          expect(item.quantity).toBe(10)
-          expect(item.tags).toEqual(['test', 'food'])
+        })
+        
+        it('has correct name', () => {
+          expect(result.value.name).toBe('Test Item')
+        })
+        
+        it('has correct quantity', () => {
+          expect(result.value.quantity).toBe(10)
+        })
+        
+        it('has correct tags', () => {
+          expect(result.value.tags).toEqual(['test', 'food'])
         })
       })
     })
   })
 
   describe('Given empty name', () => {
+    const props: CreateInventoryItemProps = {
+      organizationId: OrganizationId.generate(),
+      name: '',
+      category: InventoryCategory.FOOD,
+      quantity: 10,
+      unit: '個',
+      expiryType: ExpiryType.BEST_BEFORE,
+      tags: [],
+    }
+    
     describe('When creating inventory item', () => {
+      let result: Result<InventoryItem, ValidationError>
+      
+      beforeEach(() => {
+        result = InventoryItem.create(props)
+      })
+      
       describe('Then should return validation error', () => {
-        it('returns error result with name validation message', () => {
-          const props: CreateInventoryItemProps = {
-            organizationId: OrganizationId.generate(),
-            name: '',
-            category: InventoryCategory.FOOD,
-            quantity: 10,
-            unit: '個',
-            expiryType: ExpiryType.BEST_BEFORE,
-            tags: [],
-          }
-
-          const result = InventoryItem.create(props)
-
+        it('returns error result', () => {
           expect(result.isErr()).toBe(true)
+        })
+        
+        it('contains name validation message', () => {
           expect(result.error).toContainEqual(
             expect.objectContaining({
               message: 'Name cannot be empty',
@@ -1099,32 +1158,56 @@ describe('InventoryItem', () => {
   })
 
   describe('Given item with quantity 10', () => {
+    let item: InventoryItem
+    
+    beforeEach(() => {
+      item = createTestInventoryItem({ quantity: 10 })
+    })
+    
     describe('When consuming 3 items', () => {
+      let result: Result<ConsumptionRecord, ConsumeError>
+      
+      beforeEach(() => {
+        result = item.consume(3, 'Daily use')
+      })
+      
       describe('Then should consume successfully', () => {
-        it('reduces quantity and returns consumption record', () => {
-          const item = createTestInventoryItem({ quantity: 10 })
-
-          const result = item.consume(3, 'Daily use')
-
+        it('returns ok result', () => {
           expect(result.isOk()).toBe(true)
+        })
+        
+        it('reduces quantity to 7', () => {
           expect(item.quantity).toBe(7)
-          
-          const record = result.value
-          expect(record.amount).toBe(3)
-          expect(record.reason).toBe('Daily use')
+        })
+        
+        it('records consumption amount', () => {
+          expect(result.value.amount).toBe(3)
+        })
+        
+        it('records consumption reason', () => {
+          expect(result.value.reason).toBe('Daily use')
         })
       })
     })
 
     describe('When consuming more than available', () => {
+      let result: Result<ConsumptionRecord, ConsumeError>
+      
+      beforeEach(() => {
+        item = createTestInventoryItem({ quantity: 5 })
+        result = item.consume(10)
+      })
+      
       describe('Then should return error', () => {
-        it('returns error and does not change quantity', () => {
-          const item = createTestInventoryItem({ quantity: 5 })
-
-          const result = item.consume(10)
-
+        it('returns error result', () => {
           expect(result.isErr()).toBe(true)
+        })
+        
+        it('has insufficient quantity message', () => {
           expect(result.error.message).toBe('Insufficient quantity')
+        })
+        
+        it('does not change quantity', () => {
           expect(item.quantity).toBe(5)
         })
       })
@@ -1154,10 +1237,10 @@ const createTestInventoryItem = (overrides: Partial<CreateInventoryItemProps> = 
 }
 ```
 
-### Flutter テスト規約（Given-When-Then + Rails風ネスト構造）
+### Flutter テスト規約（Given-When-Then + Rails風ネスト構造 + 1 expect per test）
 
 ```dart
-// ✅ 良い例: Given-When-Then形式のFlutterテスト
+// ✅ 良い例: Given-When-Then形式 + 1つのtestWidgetsに1つのexpect (RSpec風)
 void main() {
   group('InventoryItemCard', () {
     late InventoryItem testItem
@@ -1178,7 +1261,7 @@ void main() {
     group('Given inventory item with basic data', () {
       group('When widget is rendered', () {
         group('Then should display item information correctly', () {
-          testWidgets('shows item name and quantity', (tester) async {
+          testWidgets('shows item name', (tester) async {
             await tester.pumpWidget(
               MaterialApp(
                 home: Scaffold(
@@ -1188,6 +1271,17 @@ void main() {
             )
 
             expect(find.text('Test Item'), findsOneWidget)
+          })
+          
+          testWidgets('shows item quantity', (tester) async {
+            await tester.pumpWidget(
+              MaterialApp(
+                home: Scaffold(
+                  body: InventoryItemCard(item: testItem),
+                ),
+              ),
+            )
+
             expect(find.text('10 個'), findsOneWidget)
           })
         })
@@ -1519,6 +1613,8 @@ export class BadInventoryService {
 - `function`より`const` + アロー関数を優先
 - コメントより型とシグネチャで意図を表現
 - 記述量は最小限（パフォーマンス影響がない限り）
+- **if文・switch文では必ずブロック`{}`を使用**
 - Given-When-Thenによる明確なテスト構造
+- **1つのitに1つのexpect（RSpec風）**
 
 すべての開発者がこの規約を遵守し、コードレビューで品質を担保することで、高品質で保守性の高い備蓄管理アプリケーションを構築できます。
