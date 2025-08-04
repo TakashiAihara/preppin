@@ -24,6 +24,10 @@
 - コメントは最小限、型とシグネチャで意図を表現
 - セルフドキュメンティングコードを目指す
 - **ただし、if文やswitch文では必ずブロック`{}`を使用（可読性と安全性のため）**
+- **Production code内で`let`は極力使用しない（`const`優先）**
+- **分割代入を積極的に活用して記述量削減**
+- **関数の引数も分割代入で受け取り、扱いやすくする**
+- **`then`チェーンは極力使わず、`async/await`で統一する**
 
 ### 4. テスト駆動開発（TDD）
 - すべての機能にテストを必須
@@ -38,24 +42,78 @@
 ### ファイル・ディレクトリ命名規則
 
 ```typescript
-// ✅ 良い例
-// ファイル名: kebab-case
-inventory-item.service.ts
-user-authentication.controller.ts
-organization-member.entity.ts
-
-// ディレクトリ名: kebab-case
+// ✅ 良い例: ケバブケース必須
+// ディレクトリでレイヤーが表現されている場合、ファイル名にレイヤー接尾辞は不要
 src/
 ├── domain/
 │   ├── inventory-items/
-│   ├── user-management/
-│   └── organization-management/
+│   │   ├── inventory-item.ts          // ✅ エンティティ
+│   │   ├── inventory-item-factory.ts  // ✅ ファクトリー
+│   │   └── consumption-record.ts      // ✅ 値オブジェクト
+│   ├── users/
+│   │   ├── user.ts                    // ✅ ユーザーエンティティ
+│   │   └── user-authentication.ts     // ✅ ユーザー認証ドメインサービス
+│   └── organizations/
+│       ├── organization.ts            // ✅ 組織エンティティ
+│       └── organization-member.ts     // ✅ 組織メンバー値オブジェクト
+├── application/
+│   ├── use-cases/
+│   │   ├── create-inventory-item.ts   // ✅ UseCase
+│   │   ├── update-user-profile.ts     // ✅ UseCase
+│   │   └── invite-organization-member.ts // ✅ UseCase
+│   └── services/
+│       ├── notification-service.ts    // ✅ アプリケーションサービス（例外的に.service.ts）
+│       └── email-service.ts           // ✅ アプリケーションサービス（例外的に.service.ts）
 ├── infrastructure/
 │   ├── database/
+│   │   ├── inventory-repository.ts    // ✅ リポジトリ実装
+│   │   ├── user-repository.ts         // ✅ リポジトリ実装
+│   │   └── organization-repository.ts // ✅ リポジトリ実装
 │   └── external-apis/
-└── application/
-    ├── use-cases/
-    └── services/
+│       ├── barcode-api-client.ts      // ✅ 外部API クライアント
+│       └── amazon-product-api.ts      // ✅ 外部API クライアント
+└── presentation/
+    ├── grpc/
+    │   ├── inventory-grpc-service.ts   // ✅ gRPCサービス（例外的に.service.ts）
+    │   └── user-grpc-service.ts        // ✅ gRPCサービス（例外的に.service.ts）
+    └── controllers/
+        ├── inventory-controller.ts     // ✅ コントローラー（例外的に.controller.ts）
+        └── user-controller.ts          // ✅ コントローラー（例外的に.controller.ts）
+
+// ❌ 悪い例: ディレクトリでレイヤーが分かるのに冗長な接尾辞
+src/
+├── domain/
+│   ├── inventory-items/
+│   │   ├── inventory-item.entity.ts    // ❌ .entity.ts は不要
+│   │   └── inventory-service.domain.ts // ❌ .domain.ts は不要
+│   └── users/
+│       └── user.entity.ts              // ❌ .entity.ts は不要
+├── application/
+│   ├── use-cases/
+│   │   └── create-item.usecase.ts      // ❌ .usecase.ts は不要
+│   └── services/
+│       └── notification.service.ts     // ❌ ここでは.tsのみでOK
+└── infrastructure/
+    └── database/
+        └── inventory.repository.ts     // ❌ .repository.ts は不要
+
+// ❌ 悪い例: camelCase や PascalCase
+src/
+├── inventoryItems/                     // ❌ camelCase は使わない
+├── UserManagement/                     // ❌ PascalCase は使わない
+└── organization_management/            // ❌ snake_case は使わない
+
+// ✅ 例外: 技術的な区別が必要な場合のみ接尾辞を使用
+src/
+├── application/
+│   └── services/
+│       ├── email.service.ts            // ✅ サービス層では技術的区別として.service.ts可
+│       └── sms.service.ts              // ✅ サービス層では技術的区別として.service.ts可
+└── presentation/  
+    ├── grpc/
+    │   └── inventory.grpc.ts           // ✅ 通信プロトコル区別として.grpc.ts可
+    └── rest/
+        └── inventory.rest.ts           // ✅ 通信プロトコル区別として.rest.ts可
 ```
 
 ### 型定義規約
@@ -129,6 +187,7 @@ export const createInventoryItem = async (
   }
 }
 
+// neverthrowの場合はチェーンも許可（関数型スタイル）
 const validateAndCreate = (request: CreateInventoryItemRequest) =>
   validateCreateRequest(request)
     .andThen(() => inventoryRepository.create(request))
@@ -146,19 +205,117 @@ export async function createItem(request: any): Promise<any> {
 }
 ```
 
-### 関数定義規約
+### 非同期処理規約（async/await優先）
 
 ```typescript
-// ✅ 良い例: const + アロー関数 + ブロック必須
-export const calculateExpiryStatus = (
-  expiryDate: Date,
+// ✅ 良い例: async/await で統一
+export const fetchInventoryItems = async ({
+  organizationId,
+  filters = {},
+  pagination = { page: 1, limit: 20 }
+}: {
+  organizationId: OrganizationId
+  filters?: InventoryFilters
+  pagination?: Pagination
+}): Promise<Result<PaginatedItems<InventoryItem>, FetchError>> => {
+  try {
+    // 複数の非同期処理を順次実行
+    const organization = await organizationRepository.findById(organizationId)
+    if (!organization) {
+      return err('ORGANIZATION_NOT_FOUND')
+    }
+
+    const items = await inventoryRepository.findByFilters({
+      organizationId,
+      filters,
+      pagination
+    })
+
+    const total = await inventoryRepository.countByFilters({
+      organizationId,
+      filters
+    })
+
+    return ok({ items, total, pagination })
+  } catch (error) {
+    logger.error('Failed to fetch inventory items', { error, organizationId })
+    return err('INTERNAL_ERROR')
+  }
+}
+
+// 並列処理の場合はPromise.allと組み合わせ
+export const fetchInventoryWithStats = async (organizationId: OrganizationId) => {
+  try {
+    const [items, stats, alerts] = await Promise.all([
+      inventoryRepository.findAll(organizationId),
+      inventoryRepository.getStats(organizationId),
+      inventoryRepository.getExpiryAlerts(organizationId)
+    ])
+
+    return ok({ items, stats, alerts })
+  } catch (error) {
+    return err('FETCH_FAILED')
+  }
+}
+
+// ❌ 悪い例: thenチェーンの使用
+export const badFetchInventoryItems = (organizationId: string) => {
+  return organizationRepository.findById(organizationId)
+    .then(organization => {
+      if (!organization) {
+        throw new Error('Organization not found')
+      }
+      return inventoryRepository.findByOrganization(organizationId)
+    })
+    .then(items => {
+      return inventoryRepository.countByOrganization(organizationId)
+        .then(total => ({ items, total }))
+    })
+    .catch(error => {
+      // エラーハンドリングが複雑になる
+      console.error(error)
+      throw error
+    })
+}
+
+// ❌ 悪い例: ネストした複雑なthenチェーン
+export const veryBadExample = () => {
+  return fetchUser()
+    .then(user => {
+      return fetchOrganization(user.organizationId)
+        .then(org => {
+          return fetchInventory(org.id)
+            .then(items => {
+              return processItems(items)
+                .then(processed => {
+                  // 深いネストで可読性が悪い
+                  return { user, org, items: processed }
+                })
+            })
+        })
+    })
+    .catch(error => {
+      // どこでエラーが発生したか分からない
+      throw error
+    })
+}
+```
+
+### 関数定義規約（分割代入活用 + let最小化）
+
+```typescript
+// ✅ 良い例: 分割代入 + const のみ使用
+export const calculateExpiryStatus = ({
+  expiryDate,
   currentDate = new Date()
-): ExpiryStatus => {
+}: {
+  expiryDate: Date
+  currentDate?: Date
+}): ExpiryStatus => {
   const daysUntilExpiry = Math.ceil(
     (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
   )
 
-  // if文では必ずブロックを使用
   if (daysUntilExpiry < 0) {
     return 'EXPIRED'
   }
@@ -174,28 +331,73 @@ export const calculateExpiryStatus = (
   return 'SAFE'
 }
 
-// 三項演算子は単純な場合のみ許可
-const validateItemName = (name: string): Result<string, ValidationError> =>
-  name.trim().length === 0 
-    ? err(new ValidationError('Name cannot be empty'))
-    : ok(name.trim())
-
-// switch文でも必ずブロックを使用
-const mapErrorCode = (error: string): number => {
-  switch (error) {
-    case 'NOT_FOUND': {
-      return 404
-    }
-    case 'UNAUTHORIZED': {
-      return 401
-    }
-    case 'BAD_REQUEST': {
-      return 400
-    }
-    default: {
-      return 500
-    }
+// 分割代入で複数の値を返す
+export const parseInventoryItem = (data: unknown) => {
+  const { id, name, quantity, expiryDate } = data as RawInventoryData
+  const isValid = id && name && quantity >= 0
+  
+  return { 
+    item: isValid ? { id, name, quantity, expiryDate } : null,
+    isValid 
   }
+}
+
+// 引数の分割代入でコードを簡潔に
+export const createInventoryItem = async ({
+  name,
+  quantity,
+  unit,
+  organizationId,
+  expiryDate,
+  ...optionalFields
+}: CreateInventoryItemRequest): Promise<Result<InventoryItem, CreateError>> => {
+  // letを使わず、constで値を作成
+  const validatedName = name.trim()
+  const normalizedQuantity = Math.max(0, quantity)
+  
+  const item = {
+    name: validatedName,
+    quantity: normalizedQuantity,
+    unit,
+    organizationId,
+    expiryDate,
+    ...optionalFields
+  }
+  
+  return await inventoryRepository.create(item)
+}
+
+// 配列・オブジェクトの分割代入
+export const processInventoryItems = (items: InventoryItem[]) => {
+  const [first, second, ...rest] = items
+  const { length } = items
+  
+  // map内でも分割代入
+  const processed = items.map(({ id, name, quantity }) => ({
+    id,
+    displayName: name.toUpperCase(),
+    inStock: quantity > 0
+  }))
+  
+  return { first, second, rest, total: length, processed }
+}
+
+// ❌ 悪い例: letの多用、分割代入を使わない
+export const badExample = (request: CreateRequest) => {
+  let name = request.name  // letを使用
+  let quantity = request.quantity
+  let unit = request.unit
+  
+  if (name) {
+    name = name.trim()  // 再代入
+  }
+  
+  let result = null  // letを使用
+  if (quantity > 0) {
+    result = { name: name, quantity: quantity }  // 冗長
+  }
+  
+  return result
 }
 
 // ❌ 悪い例: function宣言（必要な場合以外は避ける）
@@ -1029,7 +1231,7 @@ export class InventoryItem {
 ### ユースケース規約
 
 ```typescript
-// ✅ 良い例: 簡潔なユースケース実装
+// ✅ 良い例: 分割代入を活用した簡潔なユースケース
 @Injectable()
 export class CreateInventoryItemUseCase {
   constructor(
@@ -1039,40 +1241,53 @@ export class CreateInventoryItemUseCase {
     private readonly logger: Logger
   ) {}
 
-  execute = async (
-    command: CreateInventoryItemCommand
-  ): Promise<Result<InventoryItemDto, CreateInventoryItemError>> => {
-    const organization = await this.organizationRepository.findById(command.organizationId)
+  execute = async ({
+    organizationId,
+    userId,
+    barcode,
+    ...itemData
+  }: CreateInventoryItemCommand): Promise<Result<InventoryItemDto, CreateInventoryItemError>> => {
+    // 組織と権限チェック
+    const organization = await this.organizationRepository.findById(organizationId)
     if (!organization) {
       return err('ORGANIZATION_NOT_FOUND')
     }
-    if (!organization.hasWritePermission(command.userId)) {
+    if (!organization.hasWritePermission(userId)) {
       return err('PERMISSION_DENIED')
     }
 
-    if (command.barcode) {
+    // バーコード重複チェック
+    if (barcode) {
       const existingItem = await this.inventoryRepository.findByBarcode(
-        command.organizationId,
-        command.barcode
+        organizationId,
+        barcode
       )
       if (existingItem) {
         return err('DUPLICATE_BARCODE')
       }
     }
 
-    const itemResult = InventoryItem.create(command)
+    // アイテム作成
+    const itemResult = InventoryItem.create({ 
+      organizationId, 
+      barcode, 
+      ...itemData 
+    })
     if (itemResult.isErr()) {
       return err('VALIDATION_ERROR')
     }
 
-    const item = itemResult.value
+    // 永続化とイベント発行
+    const { value: item } = itemResult
+    const { id } = item
+    
     await this.inventoryRepository.save(item)
     await this.eventBus.publishAll(item.getDomainEvents())
 
-    this.logger.log(`Inventory item created: ${item.id}`, {
-      itemId: item.id,
-      organizationId: command.organizationId,
-      userId: command.userId,
+    this.logger.log(`Inventory item created: ${id}`, {
+      itemId: id,
+      organizationId,
+      userId,
     })
 
     return ok(InventoryItemDto.fromEntity(item))
@@ -1773,6 +1988,8 @@ export class BadInventoryService {
 - コメントより型とシグネチャで意図を表現
 - 記述量は最小限（パフォーマンス影響がない限り）
 - **if文・switch文では必ずブロック`{}`を使用**
+- **`then`チェーンは極力使わず、`async/await`で統一**
+- **ファイル名は必ずケバブケース、ディレクトリでレイヤー表現時は接尾辞不要**
 - Given-When-Thenによる明確なテスト構造
 - **1つのitに1つのexpect（RSpec風）**
 - **`*.spec.ts` = 単体テスト（モック積極使用）**
