@@ -38,6 +38,273 @@
   - `*.spec.ts` - 単体テスト（モック使用、単独機能テスト）
   - `*.test.ts` - 結合テスト（モック最小限、実際の依存関係使用）
 
+### 5. ドキュメント自動生成原則
+- **すべてのAs-Is系ドキュメントは自動生成で作成する**
+- 手動でのドキュメント作成・更新は禁止
+- コードと仕様の乖離を防止
+- 継続的な最新状態維持
+
+#### As-Is系ドキュメントの定義と自動生成ツール
+
+```typescript
+// ✅ 良い例: 自動生成されるAs-Is系ドキュメント
+
+// 1. API仕様書 - OpenAPI/Swagger自動生成
+/**
+ * @swagger
+ * /api/inventory/items:
+ *   get:
+ *     summary: 備蓄品一覧取得
+ *     parameters:
+ *       - name: organizationId
+ *         in: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: 備蓄品一覧
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/InventoryItem'
+ */
+export const getInventoryItems = async (request: GetInventoryItemsRequest) => {
+  // 実装
+}
+
+// 2. 型定義ドキュメント - TypeDoc自動生成
+/**
+ * 備蓄品エンティティ
+ * @example
+ * ```typescript
+ * const item = InventoryItem.create({
+ *   name: "米",
+ *   quantity: 10,
+ *   unit: "kg"
+ * })
+ * ```
+ */
+export class InventoryItem {
+  /**
+   * 備蓄品を消費する
+   * @param amount - 消費量
+   * @param reason - 消費理由
+   * @returns 消費記録またはエラー
+   */
+  public consume(amount: number, reason?: string): Result<ConsumptionRecord, ConsumeError> {
+    // 実装
+  }
+}
+
+// 3. データベーススキーマドキュメント - Prisma自動生成
+// prisma/schema.prisma からERD自動生成
+model InventoryItem {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  quantity       Float
+  unit           String
+  expiryDate     DateTime? @map("expiry_date")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  
+  @@map("inventory_items")
+}
+
+// 4. アーキテクチャ図 - Mermaidダイアグラム自動生成
+/**
+ * @mermaid
+ * graph TD
+ *   A[React Web Admin] --> B[Hono BFF]
+ *   C[Flutter Mobile] --> D[Hono RPC Services]
+ *   B --> D
+ *   D --> E[NestJS Microservices]
+ *   E --> F[PostgreSQL]
+ *   E --> G[Valkey Cache]
+ */
+
+// 5. テストカバレッジレポート - Jest/Vitest自動生成
+// package.json
+{
+  "scripts": {
+    "test:coverage": "vitest run --coverage",
+    "docs:coverage": "vitest run --coverage --reporter=html"
+  }
+}
+```
+
+#### 自動生成設定例
+
+```yaml
+# .github/workflows/docs.yml - GitHub Actions自動生成
+name: Generate Documentation
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # 1. API仕様書生成 (OpenAPI)
+      - name: Generate OpenAPI Docs
+        run: |
+          pnpm run build:api-docs
+          
+      # 2. 型定義ドキュメント生成 (TypeDoc)  
+      - name: Generate TypeScript Docs
+        run: |
+          pnpm run docs:typedoc
+          
+      # 3. データベース仕様書生成 (Prisma)
+      - name: Generate Database Docs
+        run: |
+          pnpm run docs:db-schema
+          
+      # 4. テストカバレッジレポート生成
+      - name: Generate Test Coverage
+        run: |
+          pnpm run test:coverage
+          
+      # 5. アーキテクチャ図生成 (Mermaid)
+      - name: Generate Architecture Diagrams
+        run: |
+          pnpm run docs:mermaid
+
+      # 6. 統合ドキュメントサイト構築 (VitePress/Docusaurus)
+      - name: Build Documentation Site
+        run: |
+          pnpm run docs:build
+          
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/dist
+```
+
+```json
+// package.json - 自動生成スクリプト設定
+{
+  "scripts": {
+    // API仕様書自動生成
+    "build:api-docs": "swagger-jsdoc -d swagger.config.js apps/**/*.ts -o docs/api/openapi.json",
+    "serve:api-docs": "swagger-ui-serve docs/api/openapi.json",
+    
+    // 型定義ドキュメント自動生成
+    "docs:typedoc": "typedoc --options typedoc.json",
+    
+    // データベーススキーマドキュメント自動生成
+    "docs:db-schema": "prisma generate && prisma-docs generate",
+    "docs:erd": "prisma-erd-generator",
+    
+    // テストカバレッジレポート自動生成
+    "test:coverage": "vitest run --coverage --reporter=html --reporter=json-summary",
+    
+    // アーキテクチャ図自動生成
+    "docs:mermaid": "mmdc -i docs/architecture.mmd -o docs/architecture.svg",
+    
+    // 統合ドキュメント構築
+    "docs:build": "vitepress build docs",
+    "docs:dev": "vitepress dev docs",
+    
+    // CI/CD用: 全ドキュメント自動生成
+    "docs:generate-all": "pnpm run build:api-docs && pnpm run docs:typedoc && pnpm run docs:db-schema && pnpm run test:coverage && pnpm run docs:mermaid",
+    
+    // デプロイ前チェック: ドキュメント最新性確認
+    "docs:verify": "node scripts/verify-docs-freshness.js"
+  },
+  "devDependencies": {
+    "@swagger-api/swagger-ui": "^4.19.0",
+    "swagger-jsdoc": "^6.2.8",
+    "typedoc": "^0.25.0",
+    "prisma-docs-generator": "^0.7.0",
+    "prisma-erd-generator": "^1.11.2",
+    "@mermaid-js/mermaid-cli": "^10.6.0",
+    "vitepress": "^1.0.0"
+  }
+}
+```
+
+#### 禁止事項・ルール
+
+```typescript
+// ❌ 悪い例: 手動でのAs-Is系ドキュメント作成・更新
+
+// 1. 手動API仕様書作成 (禁止)
+// docs/api/manual-api-spec.md ❌
+/**
+ * ## POST /api/inventory/items
+ * 手動で書かれたAPI仕様書
+ * パラメータ:
+ * - name: string (必須)
+ * - quantity: number (必須)
+ * ...
+ */
+
+// 2. 手動データベース仕様書作成 (禁止)  
+// docs/database/manual-schema.md ❌
+/**
+ * ## inventory_items テーブル
+ * | カラム名 | 型 | 説明 |
+ * |---------|----|----- |
+ * | id | string | 主キー |
+ * ...
+ */
+
+// 3. 手動アーキテクチャ図作成 (禁止)
+// 手動で描いたDraw.io、Figma等のアーキテクチャ図 ❌
+
+// 4. 手動テストカバレッジレポート (禁止)
+// 手動で作成したテスト結果サマリー ❌
+
+// ✅ 正しいアプローチ: 自動生成ツールによる生成
+// - OpenAPI/Swagger: APIスキーマから自動生成
+// - TypeDoc: TypeScriptコードから自動生成  
+// - Prisma: データベーススキーマから自動生成
+// - Mermaid: コード内コメントから自動生成
+// - Jest/Vitest: テスト実行結果から自動生成
+```
+
+#### 継続的ドキュメント維持
+
+```typescript
+// ✅ 良い例: ドキュメント鮮度チェック自動化
+// scripts/verify-docs-freshness.js
+export const verifyDocsFreshness = async () => {
+  const codeLastModified = await getLastModifiedTime('src/**/*.ts')
+  const docsLastGenerated = await getLastModifiedTime('docs/generated/**/*')
+  
+  if (codeLastModified > docsLastGenerated) {
+    throw new Error(
+      'Documentation is outdated. Run `pnpm docs:generate-all` to update.'
+    )
+  }
+  
+  console.log('✅ Documentation is up to date')
+}
+
+// lefthook.yml - コミット時ドキュメント鮮度チェック
+pre-commit:
+  commands:
+    docs-freshness:
+      run: pnpm docs:verify
+      
+pre-push:
+  commands:
+    regenerate-docs:
+      run: pnpm docs:generate-all
+```
+
 ## TypeScript コード規約
 
 ### ファイル・ディレクトリ命名規則
@@ -1864,38 +2131,47 @@ export class InventoryGrpcService {
 ```
 
 ```dart
-// ✅ 良い例: Flutter gRPCクライアント
+// ✅ 良い例: Flutter Hono RPCクライアント
 class InventoryRepositoryImpl implements InventoryRepository {
   @override
   Future<Either<InventoryFailure, InventoryItem>> createItem(
     CreateInventoryItemRequest request,
   ) async {
     try {
-      final grpcRequest = _mapToGrpcRequest(request);
-      final response = await _grpcClient
-          .inventoryWithAuth(_authToken)
-          .createItem(grpcRequest);
+      final response = await _honoRpcClient.post<Map<String, dynamic>>(
+        '/items',
+        body: {
+          'organizationId': request.organizationId,
+          'name': request.name,
+          'category': request.category.name.toUpperCase(),
+          'quantity': request.quantity,
+          'unit': request.unit,
+          'expiryType': request.expiryType.name.toUpperCase(),
+          // その他のフィールド
+        },
+        fromJson: (json) => json,
+      );
       
-      final item = InventoryItemModel.fromGrpc(response).toEntity();
+      final item = InventoryItemModel.fromJson(response).toEntity();
       return Right(item);
-    } on GrpcError catch (e) {
-      return Left(_mapGrpcErrorToFailure(e));
+    } on HonoRpcException catch (e) {
+      return Left(_mapHonoRpcErrorToFailure(e));
     } catch (e) {
       return Left(const InventoryFailure.unexpected());
     }
   }
 
-  InventoryFailure _mapGrpcErrorToFailure(GrpcError error) {
-    switch (error.code) {
-      case StatusCode.unauthenticated:
+  InventoryFailure _mapHonoRpcErrorToFailure(HonoRpcException error) {
+    switch (error.statusCode) {
+      case 401:
         return const InventoryFailure.unauthenticated();
-      case StatusCode.permissionDenied:
+      case 403:
         return const InventoryFailure.permissionDenied();
-      case StatusCode.notFound:
+      case 404:
         return const InventoryFailure.organizationNotFound();
-      case StatusCode.invalidArgument:
-        return InventoryFailure.validationError(error.message ?? '');
-      case StatusCode.alreadyExists:
+      case 400:
+        return InventoryFailure.validationError(error.message);
+      case 409:
         return const InventoryFailure.duplicateBarcode();
       default:
         return const InventoryFailure.serverError();
@@ -2901,6 +3177,7 @@ export class BadInventoryService {
 - **Enumは避けUnion型で表現、配列は`ReadonlyArray`推奨**
 - **`interface`より`type`を優先、`type-fest`活用で複雑な型を簡潔に**
 - **関数引数の型は抽出して定義、環境変数は`zod`で型安全に取得**
+- **すべてのAs-Is系ドキュメントは自動生成（手動作成・更新禁止）**
 - Given-When-Thenによる明確なテスト構造
 - **1つのitに1つのexpect（RSpec風）**
 - **`*.spec.ts` = 単体テスト（モック積極使用）**
