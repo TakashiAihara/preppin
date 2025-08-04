@@ -11,7 +11,7 @@
 ```mermaid
 graph TB
     subgraph "クライアント層"
-        FLUTTER[Flutter モバイルアプリ<br/>gRPC Direct]
+        RN[React Native モバイルアプリ<br/>Hono RPC Direct]
         WEB[Web管理画面<br/>React + tRPC]
     end
     
@@ -24,12 +24,12 @@ graph TB
     end
     
     subgraph "マイクロサービス層"
-        AUTH_SVC[認証サービス<br/>NestJS + gRPC + Auth.js/Keycloak]
-        INV_SVC[備蓄品サービス<br/>NestJS + gRPC]
-        ORG_SVC[組織管理サービス<br/>NestJS + gRPC]
-        NOTIFY_SVC[通知サービス<br/>NestJS + gRPC + UnifiedPush]
-        FILE_SVC[ファイル管理サービス<br/>NestJS + gRPC]
-        PRODUCT_SVC[商品情報サービス<br/>NestJS + gRPC]
+        AUTH_SVC[認証サービス<br/>Hono + Hono RPC + Auth.js/Keycloak]
+        INV_SVC[備蓄品サービス<br/>Hono + Hono RPC]
+        ORG_SVC[組織管理サービス<br/>Hono + Hono RPC]
+        NOTIFY_SVC[通知サービス<br/>Hono + Hono RPC + UnifiedPush]
+        FILE_SVC[ファイル管理サービス<br/>Hono + Hono RPC]
+        PRODUCT_SVC[商品情報サービス<br/>Hono + Hono RPC]
     end
     
     subgraph "データ層"
@@ -49,13 +49,13 @@ graph TB
         UNIFIED_PUSH[UnifiedPush<br/>プッシュ通知]
     end
     
-    %% Flutter直接gRPC通信
-    FLUTTER --> AUTH_SVC
-    FLUTTER --> INV_SVC
-    FLUTTER --> ORG_SVC
-    FLUTTER --> NOTIFY_SVC
-    FLUTTER --> FILE_SVC
-    FLUTTER --> PRODUCT_SVC
+    %% React Native直接Hono RPC通信
+    RN --> AUTH_SVC
+    RN --> INV_SVC
+    RN --> ORG_SVC
+    RN --> NOTIFY_SVC
+    RN --> FILE_SVC
+    RN --> PRODUCT_SVC
     
     %% Web管理画面はBFF経由
     WEB --> ADMIN_BFF
@@ -95,19 +95,20 @@ graph TB
 ### 技術スタック選択理由
 
 **フロントエンド:**
-- **Flutter + Dart**: 高性能クロスプラットフォーム、ネイティブコンパイル、60fps UI、豊富なウィジェット
+- **React Native + Expo + TypeScript**: 高性能クロスプラットフォーム、豊富なネイティブ機能、優れた開発体験
 - **React + Vite + React Router + React Query + TypeScript**: Web管理画面、高速ビルド、宣言的ルーティング、強力なキャッシュ機能
 - **TailwindCSS + shadcn/ui**: ユーティリティファースト、高品質コンポーネント、ダークモード対応
-- **Riverpod**: Flutter推奨状態管理、型安全、テスト容易性、リアクティブプログラミング
+- **Zustand + Immer**: React Native推奨状態管理、軽量、TypeScript完全対応、イミュータブル更新
 - **MSW (Mock Service Worker)**: Web管理画面API モック、開発・テスト環境支援
 
 **BFF・API層:**
-- **gRPC**: Flutter直接通信、高性能バイナリ通信、Protocol Buffers、型安全性、ストリーミング対応
+- **Hono RPC**: React Native直接通信、軽量高速、型安全性、Edge Runtime対応
 - **Hono**: Web管理画面専用BFF、軽量高速、Edge Runtime対応、高速ビルド
 - **tRPC**: Web管理画面専用、エンドツーエンド型安全性、優れた開発体験
 
 **マイクロサービス:**
-- **NestJS + TypeScript + SWC**: DDD/Clean Architecture対応、高速ビルド、依存性注入
+- **Hono + TypeScript + SWC**: 軽量高速、Edge Runtime対応、高速ビルド、依存性注入
+- **Hono RPC**: 型安全なサービス間通信、シンプルなAPI定義
 - **DDD (Domain Driven Design)**: ドメイン中心設計、ビジネスロジックの分離
 - **Clean Architecture**: 依存関係の逆転、レイヤー分離、テスタビリティ向上
 
@@ -140,17 +141,17 @@ graph TB
 
 ## コンポーネントとインターフェース
 
-### Flutter モバイルアプリ構成
+### React Native モバイルアプリ構成
 
 ```
-lib/
+src/
 ├── core/                # コア機能
 │   ├── constants/       # 定数定義
 │   ├── errors/          # エラー処理
-│   ├── network/         # gRPC クライアント
+│   ├── network/         # Hono RPC クライアント
 │   └── utils/           # ユーティリティ
 ├── data/                # データ層
-│   ├── datasources/     # データソース（gRPC、ローカル）
+│   ├── datasources/     # データソース（Hono RPC、ローカル）
 │   ├── models/          # データモデル
 │   └── repositories/    # リポジトリ実装
 ├── domain/              # ドメイン層
@@ -158,25 +159,28 @@ lib/
 │   ├── repositories/    # リポジトリインターフェース
 │   └── usecases/        # ユースケース
 ├── presentation/        # プレゼンテーション層
-│   ├── pages/           # 画面
-│   ├── widgets/         # ウィジェット
-│   ├── providers/       # Riverpod プロバイダー
+│   ├── screens/         # 画面コンポーネント
+│   ├── components/      # 再利用可能コンポーネント
+│   ├── navigation/      # ナビゲーション設定
+│   ├── hooks/           # カスタムフック
+│   ├── store/           # Zustand状態管理
 │   └── theme/           # テーマ・スタイル
-└── generated/           # 自動生成ファイル
-    ├── grpc/            # gRPC 生成コード
-    └── l10n/            # 国際化
+└── types/               # 型定義
+    ├── api/             # API型定義
+    ├── navigation/      # ナビゲーション型定義
+    └── store/           # ストア型定義
 ```
 
 ### API通信プロトコル選択
 
 #### プロトコル比較分析
 
-**gRPC (モバイル推奨選択)**
-- **パフォーマンス**: Protocol Buffers、高速バイナリ通信、ストリーミング対応
-- **型安全性**: .protoファイルからの自動コード生成、コンパイル時型チェック
-- **効率性**: バイナリシリアライゼーション、HTTP/2多重化
-- **ストリーミング**: リアルタイム通知、大容量データ転送
-- **言語サポート**: Dart/Flutter完全対応
+**Hono RPC (モバイル推奨選択)**
+- **パフォーマンス**: HTTP/JSON、軽量プロトコル、高速通信
+- **型安全性**: TypeScript型定義、エンドツーエンド型安全性
+- **効率性**: JSONシリアライゼーション、HTTP/2対応
+- **簡単統合**: HTTPベース、RESTful APIスタイル
+- **言語サポート**: TypeScript/JavaScript完全対応
 
 **tRPC (Web管理画面推奨選択)**
 - **型安全性**: TypeScriptネイティブ、エンドツーエンド型安全性
@@ -189,7 +193,7 @@ lib/
 ```mermaid
 graph TB
     subgraph "クライアント層"
-        FLUTTER[Flutter App<br/>Direct gRPC]
+        RN[React Native App<br/>Direct Hono RPC]
         WEB[Web Admin<br/>tRPC Client]
     end
     
@@ -197,11 +201,11 @@ graph TB
         ADMIN_BFF[Admin BFF<br/>Hono + tRPC]
     end
     
-    subgraph "gRPCサービス層"
-        AUTH_GRPC[Auth Service<br/>gRPC Server]
-        INV_GRPC[Inventory Service<br/>gRPC Server]
-        ORG_GRPC[Organization Service<br/>gRPC Server]
-        FILE_GRPC[File Service<br/>gRPC Server]
+    subgraph "Hono RPCサービス層"
+        AUTH_RPC[Auth Service<br/>Hono RPC Server]
+        INV_RPC[Inventory Service<br/>Hono RPC Server]
+        ORG_RPC[Organization Service<br/>Hono RPC Server]
+        FILE_RPC[File Service<br/>Hono RPC Server]
     end
     
     subgraph "データ層"
@@ -210,323 +214,530 @@ graph TB
         VALKEY[(Valkey)]
     end
     
-    %% Flutter直接通信（高性能）
-    FLUTTER -.->|"Direct gRPC<br/>高性能・低レイテンシ"| AUTH_GRPC
-    FLUTTER -.->|"Direct gRPC"| INV_GRPC
-    FLUTTER -.->|"Direct gRPC"| ORG_GRPC
-    FLUTTER -.->|"Direct gRPC"| FILE_GRPC
+    %% React Native直接通信（高性能）
+    RN -.->|"Direct Hono RPC<br/>軽量・型安全"| AUTH_RPC
+    RN -.->|"Direct Hono RPC"| INV_RPC
+    RN -.->|"Direct Hono RPC"| ORG_RPC
+    RN -.->|"Direct Hono RPC"| FILE_RPC
     
     %% Web管理画面（開発効率重視）
     WEB -->|"tRPC<br/>型安全・開発効率"| ADMIN_BFF
-    ADMIN_BFF --> AUTH_GRPC
-    ADMIN_BFF --> INV_GRPC
-    ADMIN_BFF --> ORG_GRPC
-    ADMIN_BFF --> FILE_GRPC
+    ADMIN_BFF --> AUTH_RPC
+    ADMIN_BFF --> INV_RPC
+    ADMIN_BFF --> ORG_RPC
+    ADMIN_BFF --> FILE_RPC
     
     %% データ層
-    AUTH_GRPC --> POSTGRES
-    INV_GRPC --> POSTGRES
-    ORG_GRPC --> POSTGRES
-    INV_GRPC --> VALKEY
-    AUTH_GRPC --> GRAFANA
+    AUTH_RPC --> POSTGRES
+    INV_RPC --> POSTGRES
+    ORG_RPC --> POSTGRES
+    INV_RPC --> VALKEY
+    AUTH_RPC --> GRAFANA
 ```
 
-#### Protocol Buffers 定義
+#### Hono RPC 型定義
 
-**共通型定義 (proto/common.proto)**
-```protobuf
-syntax = "proto3";
+**共通型定義 (packages/shared-types/src/common.ts)**
+```typescript
+import { z } from 'zod';
 
-package inventory.common;
+// 共通型定義
+export const MoneySchema = z.object({
+  amount: z.number().min(0),
+  currency: z.enum(['JPY', 'USD', 'EUR']),
+});
 
-option dart_package = "inventory_grpc";
+export const InventoryCategorySchema = z.enum([
+  'FOOD',
+  'DAILY_GOODS', 
+  'MEDICINE',
+  'OTHER'
+]);
 
-// 共通メッセージ
-message Empty {}
+export const ExpiryTypeSchema = z.enum([
+  'EXPIRY',      // 消費期限
+  'BEST_BEFORE', // 賞味期限
+  'BOTH'         // 両方
+]);
 
-message Timestamp {
-  int64 seconds = 1;
-  int32 nanos = 2;
-}
-
-message Money {
-  double amount = 1;
-  Currency currency = 2;
-}
-
-enum Currency {
-  CURRENCY_UNSPECIFIED = 0;
-  JPY = 1;
-  USD = 2;
-  EUR = 3;
-}
-
-enum InventoryCategory {
-  CATEGORY_UNSPECIFIED = 0;
-  FOOD = 1;
-  DAILY_GOODS = 2;
-  MEDICINE = 3;
-  OTHER = 4;
-}
-
-enum ExpiryType {
-  EXPIRY_TYPE_UNSPECIFIED = 0;
-  EXPIRY = 1;        // 消費期限
-  BEST_BEFORE = 2;   // 賞味期限
-  BOTH = 3;          // 両方
-}
-
-enum UserRole {
-  USER_ROLE_UNSPECIFIED = 0;
-  ADMIN = 1;
-  EDITOR = 2;
-  VIEWER = 3;
-}
+export const UserRoleSchema = z.enum([
+  'ADMIN',
+  'EDITOR', 
+  'VIEWER'
+]);
 
 // ページネーション
-message PageRequest {
-  int32 page = 1;
-  int32 limit = 2;
-}
+export const PageRequestSchema = z.object({
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(20),
+});
 
-message PageResponse {
-  int32 page = 1;
-  int32 limit = 2;
-  int64 total = 3;
-  bool has_next = 4;
-  bool has_prev = 5;
-}
+export const PageResponseSchema = z.object({
+  page: z.number(),
+  limit: z.number(),
+  total: z.number(),
+  hasNext: z.boolean(),
+  hasPrev: z.boolean(),
+});
+
+// 型エクスポート
+export type Money = z.infer<typeof MoneySchema>;
+export type InventoryCategory = z.infer<typeof InventoryCategorySchema>;
+export type ExpiryType = z.infer<typeof ExpiryTypeSchema>;
+export type UserRole = z.infer<typeof UserRoleSchema>;
+export type PageRequest = z.infer<typeof PageRequestSchema>;
+export type PageResponse = z.infer<typeof PageResponseSchema>;
 ```
 
-**認証サービス (proto/auth.proto)**
-```protobuf
-syntax = "proto3";
+**認証サービス (services/auth-service/src/routes.ts)**
+```typescript
+import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
 
-package inventory.auth;
+// 型定義
+export const UserSchema = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  displayName: z.string(),
+  profileImage: z.string().optional(),
+  isActive: z.boolean(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
 
-import "common.proto";
+export const RegisterRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  displayName: z.string().min(1),
+});
 
-option dart_package = "inventory_grpc";
+export const RegisterResponseSchema = z.object({
+  user: UserSchema,
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  expiresIn: z.number(),
+});
 
-service AuthService {
-  rpc Register(RegisterRequest) returns (RegisterResponse);
-  rpc Login(LoginRequest) returns (LoginResponse);
-  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
-  rpc Logout(LogoutRequest) returns (common.Empty);
-  rpc ResetPassword(ResetPasswordRequest) returns (common.Empty);
-}
+export const LoginRequestSchema = z.object({
+  email: z.string().email(),
+  password: z.string(),
+});
 
-message User {
-  string id = 1;
-  string email = 2;
-  string display_name = 3;
-  string profile_image = 4;
-  bool is_active = 5;
-  common.Timestamp created_at = 6;
-  common.Timestamp updated_at = 7;
-}
+export const LoginResponseSchema = z.object({
+  user: UserSchema,
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  expiresIn: z.number(),
+});
 
-message RegisterRequest {
-  string email = 1;
-  string password = 2;
-  string display_name = 3;
-}
+export const RefreshTokenRequestSchema = z.object({
+  refreshToken: z.string(),
+});
 
-message RegisterResponse {
-  User user = 1;
-  string access_token = 2;
-  string refresh_token = 3;
-  int64 expires_in = 4;
-}
+export const RefreshTokenResponseSchema = z.object({
+  accessToken: z.string(),
+  refreshToken: z.string(),
+  expiresIn: z.number(),
+});
 
-message LoginRequest {
-  string email = 1;
-  string password = 2;
-}
+// Hono RPC ルート定義
+const app = new Hono();
 
-message LoginResponse {
-  User user = 1;
-  string access_token = 2;
-  string refresh_token = 3;
-  int64 expires_in = 4;
-}
+// 認証サービス
+export const authRoutes = app
+  .post('/register', 
+    zValidator('json', RegisterRequestSchema),
+    async (c) => {
+      const request = c.req.valid('json');
+      
+      // ビジネスロジック実行
+      const result = await authService.register(request);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .post('/login',
+    zValidator('json', LoginRequestSchema), 
+    async (c) => {
+      const request = c.req.valid('json');
+      
+      const result = await authService.login(request);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 401);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .post('/refresh',
+    zValidator('json', RefreshTokenRequestSchema),
+    async (c) => {
+      const request = c.req.valid('json');
+      
+      const result = await authService.refreshToken(request.refreshToken);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 401);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .post('/logout',
+    zValidator('json', RefreshTokenRequestSchema),
+    async (c) => {
+      const request = c.req.valid('json');
+      
+      await authService.logout(request.refreshToken);
+      
+      return c.json({ success: true });
+    }
+  )
+  .post('/reset-password',
+    zValidator('json', z.object({ email: z.string().email() })),
+    async (c) => {
+      const { email } = c.req.valid('json');
+      
+      await authService.resetPassword(email);
+      
+      return c.json({ success: true });
+    }
+  );
 
-message RefreshTokenRequest {
-  string refresh_token = 1;
-}
-
-message RefreshTokenResponse {
-  string access_token = 1;
-  string refresh_token = 2;
-  int64 expires_in = 3;
-}
-
-message LogoutRequest {
-  string refresh_token = 1;
-}
-
-message ResetPasswordRequest {
-  string email = 1;
-}
+// 型エクスポート（Hono RPC用）
+export type AuthRoutes = typeof authRoutes;
+export type User = z.infer<typeof UserSchema>;
+export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
+export type RegisterResponse = z.infer<typeof RegisterResponseSchema>;
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 ```
 
-**備蓄品サービス (proto/inventory.proto)**
-```protobuf
-syntax = "proto3";
+**備蓄品サービス (services/inventory-service/src/routes.ts)**
+```typescript
+import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
+import { 
+  InventoryCategorySchema, 
+  ExpiryTypeSchema, 
+  MoneySchema, 
+  PageRequestSchema, 
+  PageResponseSchema 
+} from '@repo/shared-types';
 
-package inventory.inventory;
+// 型定義
+export const InventoryItemSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  name: z.string(),
+  brand: z.string().optional(),
+  category: InventoryCategorySchema,
+  quantity: z.number().min(0),
+  unit: z.string(),
+  minQuantity: z.number().min(0).optional(),
+  expiryDate: z.date().optional(),
+  bestBeforeDate: z.date().optional(),
+  expiryType: ExpiryTypeSchema,
+  storageLocation: z.string().optional(),
+  price: MoneySchema.optional(),
+  barcode: z.string().optional(),
+  asin: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  images: z.array(z.string()).default([]),
+  notes: z.string().optional(),
+  createdBy: z.string(),
+  updatedBy: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
 
-import "common.proto";
+export const CreateItemRequestSchema = z.object({
+  organizationId: z.string(),
+  name: z.string().min(1).max(100),
+  brand: z.string().optional(),
+  category: InventoryCategorySchema,
+  quantity: z.number().min(0),
+  unit: z.string().min(1),
+  minQuantity: z.number().min(0).optional(),
+  expiryDate: z.date().optional(),
+  bestBeforeDate: z.date().optional(),
+  expiryType: ExpiryTypeSchema,
+  storageLocation: z.string().optional(),
+  price: MoneySchema.optional(),
+  barcode: z.string().optional(),
+  asin: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  notes: z.string().optional(),
+});
 
-option dart_package = "inventory_grpc";
+export const UpdateItemRequestSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  name: z.string().min(1).max(100).optional(),
+  brand: z.string().optional(),
+  category: InventoryCategorySchema.optional(),
+  quantity: z.number().min(0).optional(),
+  unit: z.string().min(1).optional(),
+  minQuantity: z.number().min(0).optional(),
+  expiryDate: z.date().optional(),
+  bestBeforeDate: z.date().optional(),
+  expiryType: ExpiryTypeSchema.optional(),
+  storageLocation: z.string().optional(),
+  price: MoneySchema.optional(),
+  barcode: z.string().optional(),
+  asin: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+});
 
-service InventoryService {
-  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
-  rpc GetItem(GetItemRequest) returns (InventoryItem);
-  rpc CreateItem(CreateItemRequest) returns (InventoryItem);
-  rpc UpdateItem(UpdateItemRequest) returns (InventoryItem);
-  rpc DeleteItem(DeleteItemRequest) returns (common.Empty);
-  rpc ConsumeItem(ConsumeItemRequest) returns (ConsumeItemResponse);
-  rpc SearchItems(SearchItemsRequest) returns (SearchItemsResponse);
-  rpc GetExpiringItems(GetExpiringItemsRequest) returns (GetExpiringItemsResponse);
-  rpc GetLowStockItems(GetLowStockItemsRequest) returns (GetLowStockItemsResponse);
-}
+export const ConsumeItemRequestSchema = z.object({
+  itemId: z.string(),
+  organizationId: z.string(),
+  quantity: z.number().min(0.1),
+  reason: z.string().optional(),
+});
 
-message InventoryItem {
-  string id = 1;
-  string organization_id = 2;
-  string name = 3;
-  string brand = 4;
-  common.InventoryCategory category = 5;
-  double quantity = 6;
-  string unit = 7;
-  double min_quantity = 8;
-  common.Timestamp expiry_date = 9;
-  common.Timestamp best_before_date = 10;
-  common.ExpiryType expiry_type = 11;
-  string storage_location = 12;
-  common.Money price = 13;
-  string barcode = 14;
-  string asin = 15;
-  repeated string tags = 16;
-  repeated string images = 17;
-  string notes = 18;
-  string created_by = 19;
-  string updated_by = 20;
-  common.Timestamp created_at = 21;
-  common.Timestamp updated_at = 22;
-}
+export const SearchItemsRequestSchema = z.object({
+  organizationId: z.string(),
+  query: z.string().optional(),
+  category: InventoryCategorySchema.optional(),
+  storageLocation: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  expiryDateFrom: z.date().optional(),
+  expiryDateTo: z.date().optional(),
+  sortBy: z.enum(['name', 'expiryDate', 'createdAt', 'quantity']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  page: PageRequestSchema,
+});
 
-message ListItemsRequest {
-  string organization_id = 1;
-  common.PageRequest page = 2;
-}
+// Hono RPC ルート定義
+const app = new Hono();
 
-message ListItemsResponse {
-  repeated InventoryItem items = 1;
-  common.PageResponse page = 2;
-}
+export const inventoryRoutes = app
+  .get('/items/:organizationId',
+    zValidator('param', z.object({ organizationId: z.string() })),
+    zValidator('query', PageRequestSchema),
+    async (c) => {
+      const { organizationId } = c.req.valid('param');
+      const page = c.req.valid('query');
+      
+      // 権限チェック
+      const hasAccess = await checkOrganizationAccess(
+        c.get('userId'), 
+        organizationId
+      );
+      if (!hasAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.listItems(organizationId, page);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .get('/items/:organizationId/:id',
+    zValidator('param', z.object({ 
+      organizationId: z.string(),
+      id: z.string() 
+    })),
+    async (c) => {
+      const { organizationId, id } = c.req.valid('param');
+      
+      const hasAccess = await checkOrganizationAccess(
+        c.get('userId'), 
+        organizationId
+      );
+      if (!hasAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.getItem(id, organizationId);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 404);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .post('/items',
+    zValidator('json', CreateItemRequestSchema),
+    async (c) => {
+      const request = c.req.valid('json');
+      
+      const hasWriteAccess = await checkOrganizationWriteAccess(
+        c.get('userId'), 
+        request.organizationId
+      );
+      if (!hasWriteAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.createItem({
+        ...request,
+        createdBy: c.get('userId'),
+        updatedBy: c.get('userId'),
+      });
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value, 201);
+    }
+  )
+  .put('/items/:id',
+    zValidator('param', z.object({ id: z.string() })),
+    zValidator('json', UpdateItemRequestSchema),
+    async (c) => {
+      const { id } = c.req.valid('param');
+      const request = c.req.valid('json');
+      
+      const hasWriteAccess = await checkOrganizationWriteAccess(
+        c.get('userId'), 
+        request.organizationId
+      );
+      if (!hasWriteAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.updateItem(id, {
+        ...request,
+        updatedBy: c.get('userId'),
+      });
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .delete('/items/:organizationId/:id',
+    zValidator('param', z.object({ 
+      organizationId: z.string(),
+      id: z.string() 
+    })),
+    async (c) => {
+      const { organizationId, id } = c.req.valid('param');
+      
+      const hasWriteAccess = await checkOrganizationWriteAccess(
+        c.get('userId'), 
+        organizationId
+      );
+      if (!hasWriteAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.deleteItem(id, organizationId);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json({ success: true });
+    }
+  )
+  .post('/items/:id/consume',
+    zValidator('param', z.object({ id: z.string() })),
+    zValidator('json', ConsumeItemRequestSchema),
+    async (c) => {
+      const { id } = c.req.valid('param');
+      const request = c.req.valid('json');
+      
+      const hasWriteAccess = await checkOrganizationWriteAccess(
+        c.get('userId'), 
+        request.organizationId
+      );
+      if (!hasWriteAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.consumeItem({
+        ...request,
+        itemId: id,
+        userId: c.get('userId'),
+      });
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .post('/items/search',
+    zValidator('json', SearchItemsRequestSchema),
+    async (c) => {
+      const request = c.req.valid('json');
+      
+      const hasAccess = await checkOrganizationAccess(
+        c.get('userId'), 
+        request.organizationId
+      );
+      if (!hasAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.searchItems(request);
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value);
+    }
+  )
+  .get('/items/:organizationId/expiring',
+    zValidator('param', z.object({ organizationId: z.string() })),
+    zValidator('query', z.object({ 
+      days: z.number().min(1).max(365).default(30),
+      ...PageRequestSchema.shape 
+    })),
+    async (c) => {
+      const { organizationId } = c.req.valid('param');
+      const { days, ...page } = c.req.valid('query');
+      
+      const hasAccess = await checkOrganizationAccess(
+        c.get('userId'), 
+        organizationId
+      );
+      if (!hasAccess) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      
+      const result = await inventoryService.getExpiringItems(
+        organizationId, 
+        days, 
+        page
+      );
+      
+      if (result.isErr()) {
+        return c.json({ error: result.error }, 400);
+      }
+      
+      return c.json(result.value);
+    }
+  );
 
-message CreateItemRequest {
-  string organization_id = 1;
-  string name = 2;
-  string brand = 3;
-  common.InventoryCategory category = 4;
-  double quantity = 5;
-  string unit = 6;
-  double min_quantity = 7;
-  common.Timestamp expiry_date = 8;
-  common.Timestamp best_before_date = 9;
-  common.ExpiryType expiry_type = 10;
-  string storage_location = 11;
-  common.Money price = 12;
-  string barcode = 13;
-  string asin = 14;
-  repeated string tags = 15;
-  string notes = 16;
-}
-
-message UpdateItemRequest {
-  string id = 1;
-  string organization_id = 2;
-  // 更新可能なフィールド（optional）
-  optional string name = 3;
-  optional string brand = 4;
-  optional common.InventoryCategory category = 5;
-  optional double quantity = 6;
-  optional string unit = 7;
-  optional double min_quantity = 8;
-  optional common.Timestamp expiry_date = 9;
-  optional common.Timestamp best_before_date = 10;
-  optional common.ExpiryType expiry_type = 11;
-  optional string storage_location = 12;
-  optional common.Money price = 13;
-  optional string barcode = 14;
-  optional string asin = 15;
-  repeated string tags = 16;
-  optional string notes = 17;
-}
-
-message DeleteItemRequest {
-  string id = 1;
-  string organization_id = 2;
-}
-
-message GetItemRequest {
-  string id = 1;
-  string organization_id = 2;
-}
-
-message ConsumeItemRequest {
-  string item_id = 1;
-  string organization_id = 2;
-  double quantity = 3;
-  string reason = 4;
-}
-
-message ConsumeItemResponse {
-  InventoryItem item = 1;
-  double remaining_quantity = 2;
-}
-
-message SearchItemsRequest {
-  string organization_id = 1;
-  string query = 2;
-  common.InventoryCategory category = 3;
-  string storage_location = 4;
-  repeated string tags = 5;
-  common.Timestamp expiry_date_from = 6;
-  common.Timestamp expiry_date_to = 7;
-  string sort_by = 8;
-  string sort_order = 9;
-  common.PageRequest page = 10;
-}
-
-message SearchItemsResponse {
-  repeated InventoryItem items = 1;
-  common.PageResponse page = 2;
-}
-
-message GetExpiringItemsRequest {
-  string organization_id = 1;
-  int32 days = 2;
-  common.PageRequest page = 3;
-}
-
-message GetExpiringItemsResponse {
-  repeated InventoryItem items = 1;
-  common.PageResponse page = 2;
-}
-
-message GetLowStockItemsRequest {
-  string organization_id = 1;
-  common.PageRequest page = 2;
-}
-
-message GetLowStockItemsResponse {
-  repeated InventoryItem items = 1;
-  common.PageResponse page = 2;
-}
+// 型エクスポート（Hono RPC用）
+export type InventoryRoutes = typeof inventoryRoutes;
+export type InventoryItem = z.infer<typeof InventoryItemSchema>;
+export type CreateItemRequest = z.infer<typeof CreateItemRequestSchema>;
+export type UpdateItemRequest = z.infer<typeof UpdateItemRequestSchema>;
+export type ConsumeItemRequest = z.infer<typeof ConsumeItemRequestSchema>;
+export type SearchItemsRequest = z.infer<typeof SearchItemsRequestSchema>;
 ```
 
 #### tRPC ルーター定義（Web管理画面専用）
@@ -841,321 +1052,2043 @@ export const appRouter = router({
 export type AppRouter = typeof appRouter;
 ```
 
-#### Flutter gRPC クライアント統合
+#### React Native Hono RPC クライアント統合
 
-**gRPC クライアント設定 (lib/core/network/grpc_client.dart)**
-```dart
-import 'package:grpc/grpc.dart';
-import 'package:inventory_grpc/inventory_grpc.dart';
+**Hono RPC クライアント設定 (src/core/network/hono-rpc-client.ts)**
+```typescript
+import { z } from 'zod';
 
-class GrpcClient {
-  static const String _host = 'api.inventory-app.com';
-  static const int _port = 443;
+export class HonoRpcClient {
+  private static readonly BASE_URL = 'https://api.inventory-app.com';
   
-  late ClientChannel _channel;
-  late AuthServiceClient _authClient;
-  late InventoryServiceClient _inventoryClient;
-  late OrganizationServiceClient _organizationClient;
+  constructor(private authToken?: string) {}
   
-  // シングルトンパターン
-  static final GrpcClient _instance = GrpcClient._internal();
-  factory GrpcClient() => _instance;
-  GrpcClient._internal();
+  // 認証付きクライアント作成
+  withAuth(token: string): HonoRpcClient {
+    return new HonoRpcClient(token);
+  }
   
-  Future<void> initialize() async {
-    _channel = ClientChannel(
-      _host,
-      port: _port,
-      options: const ChannelOptions(
-        credentials: ChannelCredentials.secure(),
-        keepAlive: ClientKeepAliveOptions(
-          keepAliveInterval: Duration(seconds: 30),
-          keepAliveTimeout: Duration(seconds: 5),
-          keepAliveWithoutCalls: true,
-        ),
-      ),
-    );
+  // 共通HTTPヘッダー
+  private get headers(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
     
-    _authClient = AuthServiceClient(_channel);
-    _inventoryClient = InventoryServiceClient(_channel);
-    _organizationClient = OrganizationServiceClient(_channel);
-  }
-  
-  // 認証付きコールオプション
-  CallOptions _getAuthCallOptions(String? token) {
-    if (token == null) return CallOptions();
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
     
-    return CallOptions(
-      metadata: {'authorization': 'Bearer $token'},
-      timeout: const Duration(seconds: 30),
-    );
+    return headers;
   }
   
-  // 認証サービス
-  AuthServiceClient get auth => _authClient;
-  
-  // 備蓄品サービス（認証付き）
-  InventoryServiceClient inventoryWithAuth(String token) {
-    return InventoryServiceClient(
-      _channel,
-      options: _getAuthCallOptions(token),
-    );
+  // GET リクエスト
+  async get<T>(
+    path: string,
+    options: {
+      queryParams?: Record<string, string>;
+      schema: z.ZodSchema<T>;
+    }
+  ): Promise<T> {
+    const url = new URL(path, HonoRpcClient.BASE_URL);
+    
+    if (options.queryParams) {
+      Object.entries(options.queryParams).forEach(([key, value]) => {
+        url.searchParams.append(key, value);
+      });
+    }
+    
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: this.headers,
+    });
+    
+    return this.handleResponse(response, options.schema);
   }
   
-  // 組織サービス（認証付き）
-  OrganizationServiceClient organizationWithAuth(String token) {
-    return OrganizationServiceClient(
-      _channel,
-      options: _getAuthCallOptions(token),
-    );
+  // POST リクエスト
+  async post<T>(
+    path: string,
+    options: {
+      body?: unknown;
+      schema: z.ZodSchema<T>;
+    }
+  ): Promise<T> {
+    const url = new URL(path, HonoRpcClient.BASE_URL);
+    
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: this.headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    
+    return this.handleResponse(response, options.schema);
   }
   
-  Future<void> dispose() async {
-    await _channel.shutdown();
+  // PUT リクエスト
+  async put<T>(
+    path: string,
+    options: {
+      body?: unknown;
+      schema: z.ZodSchema<T>;
+    }
+  ): Promise<T> {
+    const url = new URL(path, HonoRpcClient.BASE_URL);
+    
+    const response = await fetch(url.toString(), {
+      method: 'PUT',
+      headers: this.headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    
+    return this.handleResponse(response, options.schema);
   }
-}
-```
-
-**リポジトリ実装例 (lib/data/repositories/inventory_repository_impl.dart)**
-```dart
-import 'package:inventory_grpc/inventory_grpc.dart';
-import '../../core/network/grpc_client.dart';
-import '../../domain/entities/inventory_item.dart';
-import '../../domain/repositories/inventory_repository.dart';
-import '../models/inventory_item_model.dart';
-
-class InventoryRepositoryImpl implements InventoryRepository {
-  final GrpcClient _grpcClient;
-  final String _authToken;
   
-  InventoryRepositoryImpl(this._grpcClient, this._authToken);
-  
-  @override
-  Future<List<InventoryItemEntity>> getItems(String organizationId) async {
-    try {
-      final request = ListItemsRequest()
-        ..organizationId = organizationId
-        ..page = (PageRequest()
-          ..page = 1
-          ..limit = 50);
-      
-      final response = await _grpcClient
-          .inventoryWithAuth(_authToken)
-          .listItems(request);
-      
-      return response.items
-          .map((item) => InventoryItemModel.fromGrpc(item).toEntity())
-          .toList();
-    } on GrpcError catch (e) {
-      throw _handleGrpcError(e);
+  // DELETE リクエスト
+  async delete(path: string): Promise<void> {
+    const url = new URL(path, HonoRpcClient.BASE_URL);
+    
+    const response = await fetch(url.toString(), {
+      method: 'DELETE',
+      headers: this.headers,
+    });
+    
+    if (!response.ok) {
+      throw new HonoRpcError(
+        response.status,
+        `Delete request failed: ${response.statusText}`
+      );
     }
   }
   
-  @override
-  Future<InventoryItemEntity> createItem(CreateInventoryItemRequest request) async {
-    try {
-      final grpcRequest = CreateItemRequest()
-        ..organizationId = request.organizationId
-        ..name = request.name
-        ..category = _mapCategory(request.category)
-        ..quantity = request.quantity
-        ..unit = request.unit
-        ..expiryType = _mapExpiryType(request.expiryType);
+  // レスポンス処理
+  private async handleResponse<T>(
+    response: Response,
+    schema: z.ZodSchema<T>
+  ): Promise<T> {
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       
-      if (request.expiryDate != null) {
-        grpcRequest.expiryDate = _mapTimestamp(request.expiryDate!);
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error || errorMessage;
+      } catch {
+        // JSON解析失敗時はそのまま
       }
       
-      final response = await _grpcClient
-          .inventoryWithAuth(_authToken)
-          .createItem(grpcRequest);
+      throw new HonoRpcError(response.status, errorMessage);
+    }
+    
+    const responseText = await response.text();
+    const responseJson = JSON.parse(responseText);
+    
+    // Zodスキーマでバリデーション
+    const parseResult = schema.safeParse(responseJson);
+    if (!parseResult.success) {
+      throw new HonoRpcValidationError(
+        'Response validation failed',
+        parseResult.error
+      );
+    }
+    
+    return parseResult.data;
+  }
+}
+
+// エラークラス
+export class HonoRpcError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    message: string
+  ) {
+    super(message);
+    this.name = 'HonoRpcError';
+  }
+}
+
+export class HonoRpcValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly zodError: z.ZodError
+  ) {
+    super(message);
+    this.name = 'HonoRpcValidationError';
+  }
+}
+
+// React Native用のクライアントインスタンス作成
+export const createHonoRpcClient = (authToken?: string) => {
+  return new HonoRpcClient(authToken);
+};
+```
+
+**リポジトリ実装例 (src/data/repositories/inventory-repository-impl.ts)**
+```typescript
+import { z } from 'zod';
+import { HonoRpcClient, HonoRpcError } from '../../core/network/hono-rpc-client';
+import { InventoryRepository } from '../../domain/repositories/inventory-repository';
+import { InventoryItem } from '../../domain/entities/inventory-item';
+import { CreateInventoryItemRequest, UpdateInventoryItemRequest } from '../../domain/types';
+import { InventoryFailure } from '../../domain/failures/inventory-failure';
+
+// APIレスポンススキーマ
+const InventoryItemSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  name: z.string(),
+  brand: z.string().optional(),
+  category: z.enum(['FOOD', 'DAILY_GOODS', 'MEDICINE', 'OTHER']),
+  quantity: z.number(),
+  unit: z.string(),
+  minQuantity: z.number().optional(),
+  expiryDate: z.string().optional(),
+  bestBeforeDate: z.string().optional(),
+  expiryType: z.enum(['EXPIRY', 'BEST_BEFORE', 'BOTH']),
+  storageLocation: z.string().optional(),
+  price: z.object({
+    amount: z.number(),
+    currency: z.enum(['JPY', 'USD', 'EUR'])
+  }).optional(),
+  barcode: z.string().optional(),
+  asin: z.string().optional(),
+  tags: z.array(z.string()),
+  images: z.array(z.string()),
+  notes: z.string().optional(),
+  createdBy: z.string(),
+  updatedBy: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const InventoryItemListSchema = z.object({
+  items: z.array(InventoryItemSchema),
+  total: z.number(),
+  page: z.number(),
+  limit: z.number(),
+  hasNext: z.boolean(),
+  hasPrev: z.boolean(),
+});
+
+export class InventoryRepositoryImpl implements InventoryRepository {
+  constructor(private rpcClient: HonoRpcClient) {}
+  
+  async getItems(
+    organizationId: string,
+    options: { page?: number; limit?: number } = {}
+  ): Promise<{ items: InventoryItem[]; total: number }> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}`, {
+        queryParams: {
+          page: (options.page || 1).toString(),
+          limit: (options.limit || 20).toString(),
+        },
+        schema: InventoryItemListSchema,
+      });
       
-      return InventoryItemModel.fromGrpc(response).toEntity();
-    } on GrpcError catch (e) {
-      throw _handleGrpcError(e);
+      const items = response.items.map(item => this.mapToEntity(item));
+      return { items, total: response.total };
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
     }
   }
   
-  @override
-  Stream<List<InventoryItemEntity>> watchItems(String organizationId) async* {
-    // gRPC ストリーミングを使用したリアルタイム更新
-    // 実装は要件に応じて
-    yield* Stream.periodic(
-      const Duration(seconds: 30),
-      (_) => getItems(organizationId),
-    ).asyncMap((future) => future);
-  }
-  
-  // エラーハンドリング
-  Exception _handleGrpcError(GrpcError error) {
-    switch (error.code) {
-      case StatusCode.unauthenticated:
-        return UnauthorizedException(error.message);
-      case StatusCode.permissionDenied:
-        return ForbiddenException(error.message);
-      case StatusCode.notFound:
-        return NotFoundException(error.message);
-      case StatusCode.invalidArgument:
-        return ValidationException(error.message);
-      default:
-        return ServerException(error.message ?? 'Unknown error');
+  async getItem(id: string, organizationId: string): Promise<InventoryItem> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}/${id}`, {
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
     }
   }
   
-  // 型変換ヘルパー
-  InventoryCategory _mapCategory(InventoryItemCategory category) {
-    switch (category) {
-      case InventoryItemCategory.food:
-        return InventoryCategory.FOOD;
-      case InventoryItemCategory.dailyGoods:
-        return InventoryCategory.DAILY_GOODS;
-      case InventoryItemCategory.medicine:
-        return InventoryCategory.MEDICINE;
-      case InventoryItemCategory.other:
-        return InventoryCategory.OTHER;
+  async createItem(request: CreateInventoryItemRequest): Promise<InventoryItem> {
+    try {
+      const response = await this.rpcClient.post('/items', {
+        body: {
+          organizationId: request.organizationId,
+          name: request.name,
+          brand: request.brand,
+          category: request.category,
+          quantity: request.quantity,
+          unit: request.unit,
+          minQuantity: request.minQuantity,
+          expiryDate: request.expiryDate?.toISOString(),
+          bestBeforeDate: request.bestBeforeDate?.toISOString(),
+          expiryType: request.expiryType,
+          storageLocation: request.storageLocation,
+          price: request.price,
+          barcode: request.barcode,
+          asin: request.asin,
+          tags: request.tags,
+          notes: request.notes,
+        },
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
     }
   }
   
-  ExpiryType _mapExpiryType(InventoryItemExpiryType type) {
-    switch (type) {
-      case InventoryItemExpiryType.expiry:
-        return ExpiryType.EXPIRY;
-      case InventoryItemExpiryType.bestBefore:
-        return ExpiryType.BEST_BEFORE;
-      case InventoryItemExpiryType.both:
-        return ExpiryType.BOTH;
+  async updateItem(id: string, request: UpdateInventoryItemRequest): Promise<InventoryItem> {
+    try {
+      const body: Record<string, unknown> = {
+        id,
+        organizationId: request.organizationId,
+      };
+      
+      // null でない値のみ追加
+      if (request.name !== undefined) body.name = request.name;
+      if (request.brand !== undefined) body.brand = request.brand;
+      if (request.category !== undefined) body.category = request.category;
+      if (request.quantity !== undefined) body.quantity = request.quantity;
+      if (request.unit !== undefined) body.unit = request.unit;
+      if (request.minQuantity !== undefined) body.minQuantity = request.minQuantity;
+      if (request.expiryDate !== undefined) body.expiryDate = request.expiryDate?.toISOString();
+      if (request.bestBeforeDate !== undefined) body.bestBeforeDate = request.bestBeforeDate?.toISOString();
+      if (request.expiryType !== undefined) body.expiryType = request.expiryType;
+      if (request.storageLocation !== undefined) body.storageLocation = request.storageLocation;
+      if (request.price !== undefined) body.price = request.price;
+      if (request.barcode !== undefined) body.barcode = request.barcode;
+      if (request.asin !== undefined) body.asin = request.asin;
+      if (request.tags !== undefined) body.tags = request.tags;
+      if (request.notes !== undefined) body.notes = request.notes;
+      
+      const response = await this.rpcClient.put(`/items/${id}`, {
+        body,
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
     }
   }
   
-  Timestamp _mapTimestamp(DateTime dateTime) {
-    return Timestamp()
-      ..seconds = dateTime.millisecondsSinceEpoch ~/ 1000
-      ..nanos = (dateTime.millisecondsSinceEpoch % 1000) * 1000000;
+  async deleteItem(id: string, organizationId: string): Promise<void> {
+    try {
+      await this.rpcClient.delete(`/items/${organizationId}/${id}`);
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
+    }
+  }
+  
+  async consumeItem(
+    id: string,
+    request: { organizationId: string; quantity: number; reason?: string }
+  ): Promise<InventoryItem> {
+    try {
+      const response = await this.rpcClient.post(`/items/${id}/consume`, {
+        body: {
+          itemId: id,
+          organizationId: request.organizationId,
+          quantity: request.quantity,
+          reason: request.reason,
+        },
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
+    }
+  }
+  
+  async searchItems(request: {
+    organizationId: string;
+    query?: string;
+    category?: string;
+    storageLocation?: string;
+    tags?: string[];
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: InventoryItem[]; total: number }> {
+    try {
+      const response = await this.rpcClient.post('/items/search', {
+        body: {
+          organizationId: request.organizationId,
+          query: request.query,
+          category: request.category,
+          storageLocation: request.storageLocation,
+          tags: request.tags,
+          page: {
+            page: request.page || 1,
+            limit: request.limit || 20,
+          },
+        },
+        schema: InventoryItemListSchema,
+      });
+      
+      const items = response.items.map(item => this.mapToEntity(item));
+      return { items, total: response.total };
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
+    }
+  }
+  
+  async getExpiringItems(
+    organizationId: string,
+    days: number,
+    options: { page?: number; limit?: number } = {}
+  ): Promise<{ items: InventoryItem[]; total: number }> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}/expiring`, {
+        queryParams: {
+          days: days.toString(),
+          page: (options.page || 1).toString(),
+          limit: (options.limit || 20).toString(),
+        },
+        schema: InventoryItemListSchema,
+      });
+      
+      const items = response.items.map(item => this.mapToEntity(item));
+      return { items, total: response.total };
+    } catch (error) {
+      throw this.mapErrorToFailure(error);
+    }
+  }
+  
+  // エンティティマッピング
+  private mapToEntity(data: z.infer<typeof InventoryItemSchema>): InventoryItem {
+    return new InventoryItem({
+      id: data.id,
+      organizationId: data.organizationId,
+      name: data.name,
+      brand: data.brand,
+      category: data.category as any,
+      quantity: data.quantity,
+      unit: data.unit,
+      minQuantity: data.minQuantity,
+      expiryDate: data.expiryDate ? new Date(data.expiryDate) : undefined,
+      bestBeforeDate: data.bestBeforeDate ? new Date(data.bestBeforeDate) : undefined,
+      expiryType: data.expiryType as any,
+      storageLocation: data.storageLocation,
+      price: data.price,
+      barcode: data.barcode,
+      asin: data.asin,
+      tags: data.tags,
+      images: data.images,
+      notes: data.notes,
+      createdBy: data.createdBy,
+      updatedBy: data.updatedBy,
+      createdAt: new Date(data.createdAt),
+      updatedAt: new Date(data.updatedAt),
+    });
+  }
+  
+  // エラーマッピング
+  private mapErrorToFailure(error: unknown): InventoryFailure {
+    if (error instanceof HonoRpcError) {
+      switch (error.statusCode) {
+        case 401:
+          return new InventoryFailure('UNAUTHENTICATED', 'Authentication required');
+        case 403:
+          return new InventoryFailure('PERMISSION_DENIED', 'Permission denied');
+        case 404:
+          return new InventoryFailure('NOT_FOUND', 'Item not found');
+        case 400:
+          return new InventoryFailure('VALIDATION_ERROR', error.message);
+        case 409:
+          return new InventoryFailure('DUPLICATE_BARCODE', 'Barcode already exists');
+        default:
+          return new InventoryFailure('SERVER_ERROR', 'Server error occurred');
+      }
+    }
+    
+    return new InventoryFailure('UNEXPECTED_ERROR', 'Unexpected error occurred');
   }
 }
 ```
 
-**Riverpod プロバイダー (lib/presentation/providers/inventory_provider.dart)**
-```dart
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../domain/entities/inventory_item.dart';
-import '../../domain/usecases/get_inventory_items.dart';
-import '../../domain/usecases/create_inventory_item.dart';
+**Zustand状態管理実装例 (src/presentation/store/inventory-store.ts)**
+```typescript
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { subscribeWithSelector } from 'zustand/middleware';
+import { InventoryItem } from '../../domain/entities/inventory-item';
+import { InventoryRepository } from '../../domain/repositories/inventory-repository';
 
-// 備蓄品一覧プロバイダー
-final inventoryItemsProvider = FutureProvider.family<List<InventoryItemEntity>, String>(
-  (ref, organizationId) async {
-    final useCase = ref.read(getInventoryItemsUseCaseProvider);
-    return await useCase(organizationId);
-  },
-);
+export interface InventoryState {
+  // 状態
+  items: InventoryItem[];
+  selectedItem: InventoryItem | null;
+  isLoading: boolean;
+  error: string | null;
+  searchQuery: string;
+  filters: {
+    category?: string;
+    storageLocation?: string;
+    tags: string[];
+  };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
+  
+  // アクション
+  setItems: (items: InventoryItem[]) => void;
+  setSelectedItem: (item: InventoryItem | null) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  setSearchQuery: (query: string) => void;
+  setFilters: (filters: Partial<InventoryState['filters']>) => void;
+  setPagination: (pagination: Partial<InventoryState['pagination']>) => void;
+  
+  // 非同期アクション
+  fetchItems: (organizationId: string) => Promise<void>;
+  createItem: (request: any) => Promise<void>;
+  updateItem: (id: string, request: any) => Promise<void>;
+  deleteItem: (id: string, organizationId: string) => Promise<void>;
+  consumeItem: (id: string, request: any) => Promise<void>;
+  searchItems: (request: any) => Promise<void>;
+  
+  // 計算プロパティ
+  filteredItems: InventoryItem[];
+  expiringItems: InventoryItem[];
+  lowStockItems: InventoryItem[];
+}
 
-// 備蓄品作成プロバイダー
-final createInventoryItemProvider = Provider<CreateInventoryItem>(
-  (ref) => ref.read(createInventoryItemUseCaseProvider),
-);
-
-// 選択された備蓄品プロバイダー
-final selectedInventoryItemProvider = StateProvider<InventoryItemEntity?>(
-  (ref) => null,
-);
-
-// 検索クエリプロバイダー
-final inventorySearchQueryProvider = StateProvider<String>(
-  (ref) => '',
-);
-
-// フィルタリングされた備蓄品プロバイダー
-final filteredInventoryItemsProvider = Provider<AsyncValue<List<InventoryItemEntity>>>(
-  (ref) {
-    final itemsAsync = ref.watch(inventoryItemsProvider('current_org_id'));
-    final searchQuery = ref.watch(inventorySearchQueryProvider);
-    
-    return itemsAsync.when(
-      data: (items) {
-        if (searchQuery.isEmpty) {
-          return AsyncValue.data(items);
-        }
-        
-        final filtered = items.where((item) =>
-          item.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          (item.brand?.toLowerCase().contains(searchQuery.toLowerCase()) ?? false)
-        ).toList();
-        
-        return AsyncValue.data(filtered);
+export const useInventoryStore = create<InventoryState>()(
+  subscribeWithSelector(
+    immer((set, get) => ({
+      // 初期状態
+      items: [],
+      selectedItem: null,
+      isLoading: false,
+      error: null,
+      searchQuery: '',
+      filters: {
+        tags: [],
       },
-      loading: () => const AsyncValue.loading(),
-      error: (error, stack) => AsyncValue.error(error, stack),
-    );
+      pagination: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        hasNext: false,
+        hasPrev: false,
+      },
+      
+      // 基本アクション
+      setItems: (items) => set((state) => {
+        state.items = items;
+      }),
+      
+      setSelectedItem: (item) => set((state) => {
+        state.selectedItem = item;
+      }),
+      
+      setLoading: (loading) => set((state) => {
+        state.isLoading = loading;
+      }),
+      
+      setError: (error) => set((state) => {
+        state.error = error;
+      }),
+      
+      setSearchQuery: (query) => set((state) => {
+        state.searchQuery = query;
+      }),
+      
+      setFilters: (filters) => set((state) => {
+        state.filters = { ...state.filters, ...filters };
+      }),
+      
+      setPagination: (pagination) => set((state) => {
+        state.pagination = { ...state.pagination, ...pagination };
+      }),
+      
+      // 非同期アクション
+      fetchItems: async (organizationId: string) => {
+        const { setLoading, setError, setItems, setPagination, pagination } = get();
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+          const repository = get().repository; // DIで注入されたリポジトリ
+          const result = await repository.getItems(organizationId, {
+            page: pagination.page,
+            limit: pagination.limit,
+          });
+          
+          setItems(result.items);
+          setPagination({
+            total: result.total,
+            hasNext: result.items.length === pagination.limit,
+            hasPrev: pagination.page > 1,
+          });
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to fetch items');
+        } finally {
+          setLoading(false);
+        }
+      },
+      
+      createItem: async (request) => {
+        const { setLoading, setError, fetchItems } = get();
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+          const repository = get().repository;
+          await repository.createItem(request);
+          
+          // リストを再取得
+          await fetchItems(request.organizationId);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to create item');
+          throw error;
+        } finally {
+          setLoading(false);
+        }
+      },
+      
+      updateItem: async (id: string, request) => {
+        const { setLoading, setError, items, setItems } = get();
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+          const repository = get().repository;
+          const updatedItem = await repository.updateItem(id, request);
+          
+          // 楽観的更新
+          const newItems = items.map(item => 
+            item.id === id ? updatedItem : item
+          );
+          setItems(newItems);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to update item');
+          throw error;
+        } finally {
+          setLoading(false);
+        }
+      },
+      
+      deleteItem: async (id: string, organizationId: string) => {
+        const { setLoading, setError, items, setItems } = get();
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+          const repository = get().repository;
+          await repository.deleteItem(id, organizationId);
+          
+          // 楽観的更新
+          const newItems = items.filter(item => item.id !== id);
+          setItems(newItems);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to delete item');
+          throw error;
+        } finally {
+          setLoading(false);
+        }
+      },
+      
+      consumeItem: async (id: string, request) => {
+        const { setLoading, setError, items, setItems } = get();
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+          const repository = get().repository;
+          const updatedItem = await repository.consumeItem(id, request);
+          
+          // 楽観的更新
+          const newItems = items.map(item => 
+            item.id === id ? updatedItem : item
+          );
+          setItems(newItems);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to consume item');
+          throw error;
+        } finally {
+          setLoading(false);
+        }
+      },
+      
+      searchItems: async (request) => {
+        const { setLoading, setError, setItems, setPagination } = get();
+        
+        setLoading(true);
+        setError(null);
+        
+        try {
+          const repository = get().repository;
+          const result = await repository.searchItems(request);
+          
+          setItems(result.items);
+          setPagination({
+            total: result.total,
+            hasNext: result.items.length === request.limit,
+            hasPrev: (request.page || 1) > 1,
+          });
+        } catch (error) {
+          setError(error instanceof Error ? error.message : 'Failed to search items');
+        } finally {
+          setLoading(false);
+        }
+      },
+      
+      // 計算プロパティ
+      get filteredItems() {
+        const { items, searchQuery, filters } = get();
+        
+        return items.filter(item => {
+          // 検索クエリフィルタ
+          if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+            return false;
+          }
+          
+          // カテゴリフィルタ
+          if (filters.category && item.category !== filters.category) {
+            return false;
+          }
+          
+          // 保管場所フィルタ
+          if (filters.storageLocation && item.storageLocation !== filters.storageLocation) {
+            return false;
+          }
+          
+          // タグフィルタ
+          if (filters.tags.length > 0 && !filters.tags.some(tag => item.tags.includes(tag))) {
+            return false;
+          }
+          
+          return true;
+        });
+      },
+      
+      get expiringItems() {
+        const { items } = get();
+        const now = new Date();
+        const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        
+        return items.filter(item => {
+          const expiryDate = item.expiryDate || item.bestBeforeDate;
+          return expiryDate && expiryDate <= thirtyDaysFromNow;
+        });
+      },
+      
+      get lowStockItems() {
+        const { items } = get();
+        
+        return items.filter(item => 
+          item.minQuantity !== undefined && item.quantity <= item.minQuantity
+        );
+      },
+    }))
+  )
+);
+
+// リポジトリ注入用のヘルパー
+export const injectInventoryRepository = (repository: InventoryRepository) => {
+  useInventoryStore.setState({ repository } as any);
+};
+```
+
+**リポジトリ実装例 (src/data/repositories/inventory-repository-impl.ts)**
+```typescript
+import { z } from 'zod';
+import { HonoRpcClient, HonoRpcError } from '../../core/network/hono-rpc-client';
+import { InventoryRepository } from '../../domain/repositories/inventory-repository';
+import { InventoryItem } from '../../domain/entities/inventory-item';
+import { CreateInventoryItemRequest, UpdateInventoryItemRequest } from '../../domain/types';
+
+// APIレスポンススキーマ
+const InventoryItemSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  name: z.string(),
+  brand: z.string().optional(),
+  category: z.enum(['FOOD', 'DAILY_GOODS', 'MEDICINE', 'OTHER']),
+  quantity: z.number(),
+  unit: z.string(),
+  minQuantity: z.number().optional(),
+  expiryDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
+  bestBeforeDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
+  expiryType: z.enum(['EXPIRY', 'BEST_BEFORE', 'BOTH']),
+  storageLocation: z.string().optional(),
+  price: z.object({
+    amount: z.number(),
+    currency: z.enum(['JPY', 'USD', 'EUR'])
+  }).optional(),
+  barcode: z.string().optional(),
+  asin: z.string().optional(),
+  tags: z.array(z.string()),
+  images: z.array(z.string()),
+  notes: z.string().optional(),
+  createdBy: z.string(),
+  updatedBy: z.string(),
+  createdAt: z.string().transform(val => new Date(val)),
+  updatedAt: z.string().transform(val =rinew Date(val)),
+});
+
+const InventoryItemListSchema = z.object({
+  items: z.array(InventoryItemSchema),
+  total: z.number(),
+  page: z.object({
+    page: z.number(),
+    limit: z.number(),
+    hasNext: z.boolean(),
+    hasPrev: z.boolean(),
+  }),
+});
+
+export class InventoryRepositoryImpl implements InventoryRepository {
+  constructor(private rpcClient: HonoRpcClient) {}
+  
+  async getItems(
+    organizationId: string,
+    options: { page?: number; limit?: number } = {}
+  ): Promise<{ items: InventoryItem[]; total: number }> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}`, {
+        queryParams: {
+          page: String(options.page || 1),
+       g, dynami String(options.limit || 20),
+        },
+        schema: InventoryItemListSchema,
+      });
+      
+      const items = response.items.map(item => this.mapToEntity(item));
+      return { items, total: response.total };
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async getItem(id: string, organizationId: string): Promise<InventoryItem | null> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}/${id}`, {
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      if (error instanceof HonoRpcError && error.statusCode === 404) {
+        return null;
+      }
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async createItem(request: CreateInventoryItemRequest): Promise<InventoryItem> {
+    try {
+      const response = await this.rpcClient.post('/items', {
+        body: {
+          organizationId: request.organizationId,
+          name: request.name,
+          brand: request.brand,
+          category: request.category,
+          quantity: request.quantity,
+          unit: request.unit,
+          minQuantity: request.minQuantity,
+          expiryDate: request.expiryDate?.toISOString(),
+          bestBeforeDate: request.bestBeforeDate?.toISOString(),
+          expiryType: request.expiryType,
+          storageLocation: request.storageLocation,
+          price: request.price,
+          barcode: request.barcode,
+          asin: request.asin,
+          tags: request.tags,
+          notes: request.notes,
+        },
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async updateItem(id: string, request: UpdateInventoryItemRequest): Promise<InventoryItem> {
+    try {
+      const body: Record<string, unknown> = {
+        id,
+        organizationId: request.organizationId,
+      };
+      
+      // null でない値のみ追加
+      if (request.name !== undefined) body.name = request.name;
+      if (request.brand !== undefined) body.brand = request.brand;
+      if (request.category !== undefined) body.category = request.category;
+      if (request.quantity !== undefined) body.quantity = request.quantity;
+      if (request.unit !== undefined) body.unit = request.unit;
+      if (request.minQuantity !== undefined) body.minQuantity = request.minQuantity;
+      if (request.expiryDate !== undefined) body.expiryDate = request.expiryDate?.toISOString();
+      if (request.bestBeforeDate !== undefined) body.bestBeforeDate = request.bestBeforeDate?.toISOString();
+      if (request.expiryType !== undefined) body.expiryType = request.expiryType;
+      if (request.storageLocation !== undefined) body.storageLocation = request.storageLocation;
+      if (request.price !== undefined) body.price = request.price;
+      if (request.barcode !== undefined) body.barcode = request.barcode;
+      if (request.asin !== undefined) body.asin = request.asin;
+      if (request.tags !== undefined) body.tags = request.tags;
+      if (request.notes !== undefined) body.notes = request.notes;
+      
+      const response = await this.rpcClient.put(`/items/${id}`, {
+        body,
+        schema: InventoryItemSchema,
+      });
+      
+      return this.mapToEntity(response);
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async deleteItem(id: string, organizationId: string): Promise<void> {
+    try {
+      await this.rpcClient.delete(`/items/${organizationId}/${id}`);
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async consumeItem(
+    id: string,
+    request: { organizationId: string; quantity: number; reason?: string }
+  ): Promise<InventoryItem> {
+    try {
+      const response = await this.rpcClient.post(`/items/${id}/consume`, {
+        body: {
+          itemId: id,
+          organizationId: request.organizationId,
+          quantity: request.quantity,
+          reason: request.reason,
+        },
+        schema: z.object({ item: InventoryItemSchema }),
+      });
+      
+      return this.mapToEntity(response.item);
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async searchItems(request: {
+    organizationId: string;
+    query?: string;
+    category?: string;
+    storageLocation?: string;
+    tags?: string[];
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: InventoryItem[]; total: number }> {
+    try {
+      const response = await this.rpcClient.post('/items/search', {
+        body: {
+          organizationId: request.organizationId,
+          query: request.query,
+          category: request.category,
+          storageLocation: request.storageLocation,
+          tags: request.tags,
+          page: {
+            page: request.page || 1,
+            limit: request.limit || 20,
+          },
+        },
+        schema: InventoryItemListSchema,
+      });
+      
+      const items = response.items.map(item => this.mapToEntity(item));
+      return { items, total: response.total };
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  async getExpiringItems(
+    organizationId: string,
+    days: number,
+    options: { page?: number; limit?: number } = {}
+  ): Promise<{ items: InventoryItem[]; total: number }> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}/expiring`, {
+        queryParams: {
+          days: String(days),
+          page: String(options.page || 1),
+          limit: String(options.limit || 20),
+        },
+        schema: InventoryItemListSchema,
+      });
+      
+      const items = response.items.map(item => this.mapToEntity(item));
+      return { items, total: response.total };
+    } catch (error) {
+      if (error instanceof HonoRpcError) {
+        throw this.mapToRepositoryError(error);
+      }
+      throw error;
+    }
+  }
+  
+  // エンティティマッピング
+  private mapToEntity(data: z.infer<typeof InventoryItemSchema>): InventoryItem {
+    return new InventoryItem({
+      id: data.id,
+      organizationId: data.organizationId,
+      name: data.name,
+      brand: data.brand,
+      category: data.category,
+      quantity: data.quantity,
+      unit: data.unit,
+      minQuantity: data.minQuantity,
+      expiryDate: data.expiryDate,
+      bestBeforeDate: data.bestBeforeDate,
+      expiryType: data.expiryType,
+      storageLocation: data.storageLocation,
+      price: data.price,
+      barcode: data.barcode,
+      asin: data.asin,
+      tags: data.tags,
+      images: data.images,
+      notes: data.notes,
+      createdBy: data.createdBy,
+      updatedBy: data.updatedBy,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    });
+  }
+  
+  // エラーマッピング
+  private mapToRepositoryError(error: HonoRpcError): Error {
+    switch (error.statusCode) {
+      case 401:
+        return new Error('Unauthorized');
+      case 403:
+        return new Error('Permission denied');
+      case 404:
+        return new Error('Not found');
+      case 400:
+        return new Error(`Validation error: ${error.message}`);
+      case 409:
+        return new Error('Duplicate barcode');
+      default:
+        return new Error(`Server error: ${error.message}`);
+    }
+  }
+}
+```
+
+**Zustand状態管理実装例 (src/presentation/store/inventory-store.ts)**
+```typescript
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { persist } from 'zustand/middleware';
+import { InventoryItem } from '../../domain/entities/inventory-item';
+import { InventoryRepository } from '../../domain/repositories/inventory-repository';
+
+export interface InventoryState {
+  // 状態
+  items: InventoryItem[];
+  selectedItem: InventoryItem | null;
+  isLoading: boolean;
+  error: string | null;
+  searchQuery: string;
+  filters: {
+    category?: string;
+    storageLocation?: string;
+    tags?: string[];
+  };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    hasNext: boolean;
+  };
+  
+  // アクション
+  setItems: (items: InventoryItem[]) => void;
+  addItem: (item: InventoryItem) => void;
+  updateItem: (id: string, updates: Partial<InventoryItem>) => void;
+  removeItem: (id: string) => void;
+  setSelectedItem: (item: InventoryItem | null) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  setSearchQuery: (query: string) => void;
+  setFilters: (filters: Partial<InventoryState['filters']>) => void;
+  setPagination: (pagination: Partial<InventoryState['pagination']>) => void;
+  clearFilters: () => void;
+  reset: () => void;
+}
+
+const initialState = {
+  items: [],
+  selectedItem: null,
+  isLoading: false,
+  error: null,
+  searchQuery: '',
+  filters: {},
+  pagination: {
+    page: 1,
+    limit: 20,
+    total: 0,
+    hasNext: false,
   },
+};
+
+export const useInventoryStore = create<InventoryState>()(
+  persist(
+    immer((set) => ({
+      ...initialState,
+      
+      setItems: (items) => set((state) => {
+        state.items = items;
+      }),
+      
+      addItem: (item) => set((state) => {
+        state.items.unshift(item);
+      }),
+      
+      updateItem: (id, updates) => set((state) => {
+        const index = state.items.findIndex(item => item.id === id);
+        if (index !== -1) {
+          state.items[index] = { ...state.items[index], ...updates };
+        }
+        if (state.selectedItem?.id === id) {
+          state.selectedItem = { ...state.selectedItem, ...updates };
+        }
+      }),
+      
+      removeItem: (id) => set((state) => {
+        state.items = state.items.filter(item => item.id !== id);
+        if (state.selectedItem?.id === id) {
+          state.selectedItem = null;
+        }
+      }),
+      
+      setSelectedItem: (item) => set((state) => {
+        state.selectedItem = item;
+      }),
+      
+      setLoading: (loading) => set((state) => {
+        state.isLoading = loading;
+      }),
+      
+      setError: (error) => set((state) => {
+        state.error = error;
+      }),
+      
+      setSearchQuery: (query) => set((state) => {
+        state.searchQuery = query;
+      }),
+      
+      setFilters: (filters) => set((state) => {
+        state.filters = { ...state.filters, ...filters };
+      }),
+      
+      setPagination: (pagination) => set((state) => {
+        state.pagination = { ...state.pagination, ...pagination };
+      }),
+      
+      clearFilters: () => set((state) => {
+        state.filters = {};
+        state.searchQuery = '';
+      }),
+      
+      reset: () => set(() => ({ ...initialState })),
+    })),
+    {
+      name: 'inventory-store',
+      partialize: (state) => ({
+        // 永続化する状態を選択
+        searchQuery: state.searchQuery,
+        filters: state.filters,
+        pagination: state.pagination,
+      }),
+    }
+  )
+);
+
+// カスタムフック
+export const useInventoryActions = () => {
+  const store = useInventoryStore();
+  
+  return {
+    setItems: store.setItems,
+    addItem: store.addItem,
+    updateItem: store.updateItem,
+    removeItem: store.removeItem,
+    setSelectedItem: store.setSelectedItem,
+    setLoading: store.setLoading,
+    setError: store.setError,
+    setSearchQuery: store.setSearchQuery,
+    setFilters: store.setFilters,
+    setPagination: store.setPagination,
+    clearFilters: store.clearFilters,
+    reset: store.reset,
+  };
+};
+
+// セレクター
+export const useInventorySelectors = () => {
+  const items = useInventoryStore(state => state.items);
+  const selectedItem = useInventoryStore(state => state.selectedItem);
+  const isLoading = useInventoryStore(state => state.isLoading);
+  const error = useInventoryStore(state => state.error);
+  const searchQuery = useInventoryStore(state => state.searchQuery);
+  const filters = useInventoryStore(state => state.filters);
+  const pagination = useInventoryStore(state => state.pagination);
+  
+  // フィルタリングされたアイテム
+  const filteredItems = items.filter(item => {
+    if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return false;
+    }
+    if (filters.category && item.category !== filters.category) {
+      return false;
+    }
+    if (filters.storageLocation && item.storageLocation !== filters.storageLocation) {
+      return false;
+    }
+    if (filters.tags && filters.tags.length > 0) {
+      const hasMatchingTag = filters.tags.some(tag => item.tags.includes(tag));
+      if (!hasMatchingTag) {
+        return false;
+      }
+    }
+    return true;
+  });
+  
+  return {
+    items,
+    filteredItems,
+    selectedItem,
+    isLoading,
+    error,
+    searchQuery,
+    filters,
+    pagination,
+  };
+};
+```c>) fromJson,
+  }) async {
+    final uri = Uri.parse('$_baseUrl$path');
+    
+    final response = await _httpClient.post(
+      uri,
+      headers: _headers,
+      body: body != null ? jsonEncode(body) : null,
+    );
+    
+    return _handleResponse(response, fromJson);
+  }
+  
+  // PUT リクエスト
+  Future<T> put<T>(
+    String path, {
+    Map<String, dynamic>? body,
+    required T Function(Map<String, dynamic>) fromJson,
+  }) async {
+    final uri = Uri.parse('$_baseUrl$path');
+    
+    final response = await _httpClient.put(
+      uri,
+      headers: _headers,
+      body: body != null ? jsonEncode(body) : null,
+    );
+    
+    return _handleResponse(response, fromJson);
+  }
+  
+  // DELETE リクエスト
+  Future<void> delete(String path) async {
+    final uri = Uri.parse('$_baseUrl$path');
+    
+    final response = await _httpClient.delete(uri, headers: _headers);
+    
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw HonoRpcException(
+        statusCode: response.statusCode,
+        message: 'Delete request failed',
+      );
+    }
+  }
+  
+  // レスポンス処理
+  T _handleResponse<T>(
+    http.Response response,
+    T Function(Map<String, dynamic>) fromJson,
+  ) {
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final errorBody = jsonDecode(response.body) as Map<String, dynamic>;
+      throw HonoRpcException(
+        statusCode: response.statusCode,
+        message: errorBody['error'] ?? 'Request failed',
+        details: errorBody,
+      );
+    }
+    
+    final responseBody = jsonDecode(response.body) as Map<String, dynamic>;
+    return fromJson(responseBody);
+  }
+}
+
+// エラークラス
+class HonoRpcException implements Exception {
+  final int statusCode;
+  final String message;
+  final Map<String, dynamic>? details;
+  
+  const HonoRpcException({
+    required this.statusCode,
+    required this.message,
+    this.details,
+  });
+  
+  @override
+  String toString() => 'HonoRpcException($statusCode): $message';
+}
+
+// Riverpod プロバイダー
+final httpClientProvider = Provider<http.Client>((ref) => http.Client());
+
+final honoRpcClientProvider = Provider<HonoRpcClient>((ref) {
+  final httpClient = ref.read(httpClientProvider);
+  return HonoRpcClient(httpClient);
+});
+
+final authenticatedHonoRpcClientProvider = Provider<HonoRpcClient>((ref) {
+  final baseClient = ref.read(honoRpcClientProvider);
+  final authToken = ref.read(authTokenProvider);
+  
+  if (authToken == null) {
+    throw Exception('Authentication token not available');
+  }
+  
+  return baseClient.withAuth(authToken);
+});
+```
+
+**リポジトリ実装例 (src/data/repositories/inventory-repository-impl.ts)**
+```typescript
+import { z } from 'zod';
+import { Result, ok, err } from 'neverthrow';
+import { HonoRpcClient, HonoRpcError } from '../../core/network/hono-rpc-client';
+import { InventoryItem, CreateInventoryItemRequest, UpdateInventoryItemRequest } from '../../domain/entities/inventory-item';
+import { InventoryRepository } from '../../domain/repositories/inventory-repository';
+import { InventoryFailure } from '../../domain/failures/inventory-failure';
+
+// レスポンススキーマ定義
+const InventoryItemSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  name: z.string(),
+  brand: z.string().optional(),
+  category: z.enum(['FOOD', 'DAILY_GOODS', 'MEDICINE', 'OTHER']),
+  quantity: z.number(),
+  unit: z.string(),
+  minQuantity: z.number().optional(),
+  expiryDate: z.string().optional(),
+  bestBeforeDate: z.string().optional(),
+  expiryType: z.enum(['EXPIRY', 'BEST_BEFORE', 'BOTH']),
+  storageLocation: z.string().optional(),
+  price: z.object({
+    amount: z.number(),
+    currency: z.enum(['JPY', 'USD', 'EUR'])
+  }).optional(),
+  barcode: z.string().optional(),
+  asin: z.string().optional(),
+  tags: z.array(z.string()),
+  images: z.array(z.string()),
+  notes: z.string().optional(),
+  createdBy: z.string(),
+  updatedBy: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const InventoryItemListSchema = z.object({
+  items: z.array(InventoryItemSchema),
+  total: z.number(),
+  page: z.object({
+    page: z.number(),
+    limit: z.number(),
+    hasNext: z.boolean(),
+    hasPrev: z.boolean(),
+  }),
+});
+
+export class InventoryRepositoryImpl implements InventoryRepository {
+  constructor(private rpcClient: HonoRpcClient) {}
+  
+  async getItems(
+    organizationId: string,
+    options: { page?: number; limit?: number } = {}
+  ): Promise<Result<InventoryItem[], InventoryFailure>> {
+    try {
+      const response = await this.rpcClient.get('/items/' + organizationId, {
+        queryParams: {
+          page: (options.page || 1).toString(),
+          limit: (options.limit || 50).toString(),
+        },
+        schema: InventoryItemListSchema,
+      });
+      
+      const items = response.items.map(this.mapToEntity);
+      return ok(items);
+    } catch (error) {
+      return err(this.mapErrorToFailure(error));
+    }
+  }
+  
+  async getItem(
+    id: string,
+    organizationId: string
+  ): Promise<Result<InventoryItem, InventoryFailure>> {
+    try {
+      const response = await this.rpcClient.get(`/items/${organizationId}/${id}`, {
+        schema: InventoryItemSchema,
+      });
+      
+      const item = this.mapToEntity(response);
+      return ok(item);
+    } catch (error) {
+      return err(this.mapErrorToFailure(error));
+    }
+  }
+  
+  async createItem(
+    request: CreateInventoryItemRequest
+  ): Promise<Result<InventoryItem, InventoryFailure>> {
+    try {
+      const response = await this.rpcClient.post('/items', {
+        body: {
+          organizationId: request.organizationId,
+          name: request.name,
+          brand: request.brand,
+          category: request.category,
+          quantity: request.quantity,
+          unit: request.unit,
+          minQuantity: request.minQuantity,
+          expiryDate: request.expiryDate?.toISOString(),
+          bestBeforeDate: request.bestBeforeDate?.toISOString(),
+          expiryType: request.expiryType,
+          storageLocation: request.storageLocation,
+          price: request.price,
+          barcode: request.barcode,
+          asin: request.asin,
+          tags: request.tags,
+          notes: request.notes,
+        },
+        schema: InventoryItemSchema,
+      });
+      
+      const item = this.mapToEntity(response);
+      return ok(item);
+    } catch (error) {
+      return err(this.mapErrorToFailure(error));
+    }
+  }
+  
+  async updateItem(
+    id: string,
+    request: UpdateInventoryItemRequest
+  ): Promise<Result<InventoryItem, InventoryFailure>> {
+    try {
+      const body: Record<string, unknown> = {
+        id,
+        organizationId: request.organizationId,
+      };
+      
+      // null でない値のみ追加
+      if (request.name !== undefined) body.name = request.name;
+      if (request.brand !== undefined) body.brand = request.brand;
+      if (request.category !== undefined) body.category = request.category;
+      if (request.quantity !== undefined) body.quantity = request.quantity;
+      if (request.unit !== undefined) body.unit = request.unit;
+      if (request.minQuantity !== undefined) body.minQuantity = request.minQuantity;
+      if (request.expiryDate !== undefined) body.expiryDate = request.expiryDate?.toISOString();
+      if (request.bestBeforeDate !== undefined) body.bestBeforeDate = request.bestBeforeDate?.toISOString();
+      if (request.expiryType !== undefined) body.expiryType = request.expiryType;
+      if (request.storageLocation !== undefined) body.storageLocation = request.storageLocation;
+      if (request.price !== undefined) body.price = request.price;
+      if (request.barcode !== undefined) body.barcode = request.barcode;
+      if (request.asin !== undefined) body.asin = request.asin;
+      if (request.tags !== undefined) body.tags = request.tags;
+      if (request.notes !== undefined) body.notes = request.notes;
+      
+      const response = await this.rpcClient.put(`/items/${id}`, {
+        body,
+        schema: InventoryItemSchema,
+      });
+      
+      const item = this.mapToEntity(response);
+      return ok(item);
+    } catch (error) {
+      return err(this.mapErrorToFailure(error));
+    }
+  }
+  
+  async deleteItem(
+    id: string,
+    organizationId: string
+  ): Promise<Result<void, InventoryFailure>> {
+    try {
+      await this.rpcClient.delete(`/items/${organizationId}/${id}`);
+      return ok(undefined);
+    } catch (error) {
+      return err(this.mapErrorToFailure(error));
+    }
+  }
+  
+  async consumeItem(
+    id: string,
+    request: { organizationId: string; quantity: number; reason?: string }
+  ): Promise<Result<InventoryItem, InventoryFailur
+    }ry {
+      c   reason: request.reason,
+        },
+        schema: z.object({ item: InventoryItemSchema }),
+      
+      const item = this.mapToEntity(response.item);
+    } catch (error) {
+    }
+  }: data.notes,updatedAt),
+    };
+  }
+  ングror:erreturn 'UNAUTHENTICATED';
+        caseturn 'PERMISSION_DENIED';
+        caseturn 'NOT_FOUND';
+        case 400:IDATION_ERROR';
+        case 409
+          return 'SERVER_ERROR';
+      }
+    }
+    urn 'UNEXPECTED_ERROR';
+  }
+}
+```
+    ret:ATE_BARCODE';
+        default:
+          return 'DUPLIC
+          return 'VALe 404:
+          re 403:
+          r 401:
+          reh (error.statusCode) {
+        casor instanceof HonoRpcError) {
+      switc unknown): InventoryFailure {
+    if (
+  private mapErrorToFailure(er
+  // エラーマッピ
+      createdAt: new Date(data.w Date(data.createdAt),
+      updatedAt: ne   createdBy: data.createdBy,
+   ,
+      updatedBy: data.updatedBy
+  ing;?: string; sg[];Date;rageLocation,
+      prtesice: data.prbarcode,
+      asines: data.images,
+      no: data.asin,
+      imag
+      tags: data.tags,ice,
+      barcode: data.
+      e);k(items);dat: data.stoa.expiryType,
+      storageLocationreDate ? new Date(data.bestBeforeDate) : undefined,
+      expiryType: 
+      bestBeforeDate: data.bestBefo
+    } caDate(data.expiryDate) : undefined,
+      brand: data.braa.expiryDate ? new nd,tity,
+      unit:yDate: dat data.unit,ity,
+      expir
+      minQuantity: data.minQuant   quantityId,
+      id: data.id,nizati
+      organizationId: data.orgay,
+          'category': request.category?.name.toUpperCase(),
+          'storageLocation': request.storageLocation,
+          'tags': request.tags,
+          'expiryDateFrom': request.expiryDateFrom?.toIso8601String(),
+          'expiryDateTo': request.expiryDateTo?.toIso8601String(),
+          'sortBy': request.sortBy,
+          'sortOrder': request.sortOrder,
+          'page': {
+            'page': request.page,
+            'limit': request.limit,
+          },
+        },
+        fromJson: (json) => json,
+      );
+      
+      final items = (response['items'] as List)
+          .map((item) => InventoryItemModel.fromJson(item).toEntity())
+          .toList();
+      
+      return Right(items);
+    } on HonoRpcException catch (e) {
+      return Left(_mapHonoRpcErrorToFailure(e));
+    } catch (e) {
+      return Left(const InventoryFailure.unexpected());
+    }
+  }
+  
+  @override
+  Future<Either<InventoryFailure, List<InventoryItemEntity>>> getExpiringItems(
+    String organizationId,
+    int days, {
+    int page = 1,
+    int limit = 50,
+  }) async {
+    try {
+      final response = await _rpcClient.get<Map<String, dynamic>>(
+        '/items/$organizationId/expiring',
+        queryParams: {
+          'days': days.toString(),
+          'page': page.toString(),
+          'limit': limit.toString(),
+        },
+        fromJson: (json) => json,
+      );
+      
+      final items = (response['items'] as List)
+          .map((item) => InventoryItemModel.fromJson(item).toEntity())
+          .toList();
+      
+      return Right(items);
+    } on HonoRpcException catch (e) {
+      return Left(_mapHonoRpcErrorToFailure(e));
+    } catch (e) {
+      return Left(const InventoryFailure.unexpected());
+    }
+  }
+  
+  // エラーマッピング
+  InventoryFailure _mapHonoRpcErrorToFailure(HonoRpcException error) {
+    switch (error.statusCode) {
+      case 401:
+        return const InventoryFailure.unauthenticated();
+      case 403:
+        return const InventoryFailure.permissionDenied();
+      case 404:
+        return const InventoryFailure.notFound();
+      case 400:
+        return InventoryFailure.validationError(error.message);
+      case 409:
+        return const InventoryFailure.duplicateBarcode();
+      default:
+        return const InventoryFailure.serverError();
+    }
+  }
+}
+```
+
+**Zustand ストア (src/stores/inventory-store.ts)**
+```typescript
+import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
+import { persist } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { InventoryItemEntity } from '../../domain/entities/inventory-item';
+import { GetInventoryItems } from '../../domain/usecases/get-inventory-items';
+import { CreateInventoryItem } from '../../domain/usecases/create-inventory-item';
+
+type InventoryStore = {
+  items: InventoryItemEntity[];
+  loading: boolean;
+  error: string | null;
+  selectedItem: InventoryItemEntity | null;
+  searchQuery: string;
+  
+  // Actions
+  setItems: (items: InventoryItemEntity[]) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  setSelectedItem: (item: InventoryItemEntity | null) => void;
+  setSearchQuery: (query: string) => void;
+  
+  // Async actions
+  fetchItems: (organizationId: string) => Promise<void>;
+  createItem: (item: Omit<InventoryItemEntity, 'id'>) => Promise<void>;
+  
+  // Computed
+  filteredItems: () => InventoryItemEntity[];
+};
+
+export const useInventoryStore = create<InventoryStore>()(  
+  persist(
+    immer((set, get) => ({
+      items: [],
+      loading: false,
+      error: null,
+      selectedItem: null,
+      searchQuery: '',
+      
+      setItems: (items) => set({ items }),
+      setLoading: (loading) => set({ loading }),
+      setError: (error) => set({ error }),
+      setSelectedItem: (selectedItem) => set({ selectedItem }),
+      setSearchQuery: (searchQuery) => set({ searchQuery }),
+      
+      fetchItems: async (organizationId) => {
+        set({ loading: true, error: null });
+        try {
+          const getInventoryItems = new GetInventoryItems();
+          const result = await getInventoryItems.execute(organizationId);
+          if (result.isOk()) {
+            set({ items: result.value, loading: false });
+          } else {
+            set({ error: result.error.message, loading: false });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message, loading: false });
+        }
+      },
+      
+      createItem: async (item) => {
+        set({ loading: true, error: null });
+        try {
+          const createInventoryItem = new CreateInventoryItem();
+          const result = await createInventoryItem.execute(item);
+          if (result.isOk()) {
+            set((state) => {
+              state.items.push(result.value);
+              state.loading = false;
+            });
+          } else {
+            set({ error: result.error.message, loading: false });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message, loading: false });
+        }
+      },
+      
+      filteredItems: () => {
+        const { items, searchQuery } = get();
+        if (!searchQuery) return items;
+        
+        return items.filter((item) =>
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (item.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
+        );
+      },
+    })),
+    {
+      name: 'inventory-store',
+      storage: {
+        getItem: (name) => AsyncStorage.getItem(name).then((value) => value ? JSON.parse(value) : null),
+        setItem: (name, value) => AsyncStorage.setItem(name, JSON.stringify(value)),
+        removeItem: (name) => AsyncStorage.removeItem(name),
+      },
+    }
+  )
 );
 ```
 
-**Flutter ウィジェット使用例 (lib/presentation/pages/inventory_list_page.dart)**
-```dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/inventory_provider.dart';
-import '../widgets/inventory_item_card.dart';
+**React Native 画面コンポーネント (src/screens/InventoryListScreen.tsx)**
+```typescript
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  TextInput,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useInventoryStore } from '../stores/inventory-store';
+import { InventoryItemCard } from '../components/InventoryItemCard';
+import { InventoryItemEntity } from '../../domain/entities/inventory-item';
 
-class InventoryListPage extends ConsumerWidget {
-  const InventoryListPage({super.key});
+type InventoryListScreenProps = {
+  navigation: any;
+  route: {
+    params: {
+      organizationId: string;
+    };
+  };
+};
+
+export const InventoryListScreen: React.FC<InventoryListScreenProps> = ({
+  navigation,
+  route,
+}) => {
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const {
+    loading,
+    error,
+    searchQuery,
+    setSearchQuery,
+    fetchItems,
+    filteredItems,
+  } = useInventoryStore();
   
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final inventoryItemsAsync = ref.watch(filteredInventoryItemsProvider);
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('備蓄品一覧'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => _showSearchDialog(context, ref),
-          ),
-        ],
-      ),
-      body: inventoryItemsAsync.when(
-        data: (items) => ListView.builder(
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return InventoryItemCard(
-              item: item,
-              onTap: () => _navigateToDetail(context, item),
-              onConsume: () => _showConsumeDialog(context, ref, item),
-            );
-          },
-        ),
-        loading: () => const Center(
-          child: CircularProgressIndicator(),
-        ),
-        error: (error, stack) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('エラーが発生しました: $error'),
-              ElevatedButton(
-                onPressed: () => ref.refresh(inventoryItemsProvider('current_org_id')),
-                child: const Text('再試行'),
-              ),
-            ],
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _navigateToCreate(context),
-        child: const Icon(Icons.add),
-      ),
+  const { organizationId } = route.params;
+  
+  useEffect(() => {
+    fetchItems(organizationId);
+  }, [organizationId]);
+  
+  const handleItemPress = (item: InventoryItemEntity) => {
+    navigation.navigate('InventoryDetail', { item });
+  };
+  
+  const handleConsumePress = (item: InventoryItemEntity) => {
+    Alert.alert(
+      '消費記録',
+      `${item.name}を消費しますか？`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '消費', onPress: () => handleConsume(item) },
+      ]
+    );
+  };
+  
+  const handleConsume = async (item: InventoryItemEntity) => {
+    // TODO: 消費ロジック実装
+    console.log('Consuming item:', item.id);
+  };
+  
+  const handleAddPress = () => {
+    navigation.navigate('InventoryCreate', { organizationId });
+  };
+  
+  const handleRetry = () => {
+    fetchItems(organizationId);
+  };
+  
+  const renderItem = ({ item }: { item: InventoryItemEntity }) => (
+    <InventoryItemCard
+      item={item}
+      onPress={() => handleItemPress(item)}
+      onConsumePress={() => handleConsumePress(item)}
+    />
+  );
+  
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      </SafeAreaView>
     );
   }
   
-  void _showSearchDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('検索'),
-        content: TextField(
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>エラーが発生しました: {error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <Text style={styles.retryButtonText}>再試行</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>備蓄品一覧</Text>
+        <TouchableOpacity
+          style={styles.searchButton}
+          onPress={() => setSearchModalVisible(true)}
+        >
+          <Ionicons name="search" size={24} color="#007AFF" />
+        </TouchableOpacity>
+      </View>
+      
+      <FlatList
+        data={filteredItems()}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContainer}
+      />
+      
+      <TouchableOpacity style={styles.fab} onPress={handleAddPress}>
+        <Ionicons name="add" size={24} color="white" />
+      </TouchableOpacity>
+      
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={searchModalVisible}
+        onRequestClose={() => setSearchModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>検索</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="商品名またはブランド名を入力"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setSearchModalVisible(false)}
+              >
+                <Text style={styles.cancelButtonText}>キャンセル</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.okButton]}
+                onPress={() => setSearchModalVisible(false)}
+              >
+                <Text style={styles.okButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  searchButton: {
+    padding: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  listContainer: {
+    padding: 16,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 8,
+    width: '80%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  modalButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#f0f0f0',
+  },
+  cancelButtonText: {
+    color: '#333',
+  },
+  okButton: {
+    backgroundColor: '#007AFF',
+  },
+  okButtonText: {
+    color: 'white',
+  },
           onChanged: (value) {
             ref.read(inventorySearchQueryProvider.notifier).state = value;
           },
@@ -1603,11 +3536,9 @@ export const lokiConfig = {
 };
 
 // infrastructure/logging/logger.service.ts
-import { Injectable } from '@nestjs/common';
 import { createLogger, format, transports } from 'winston';
 import LokiTransport from 'winston-loki';
 
-@Injectable()
 export class LoggerService {
   private logger;
 
@@ -1714,7 +3645,7 @@ export class InventoryService {
 3. **競合解決**: タイムスタンプベースの最新優先
 
 **ローカルストレージ:**
-- Hive/SQLite (Flutter): オフラインデータ保存
+- AsyncStorage/SQLite (React Native): オフラインデータ保存
 - SharedPreferences: アプリ状態の永続化
 
 ## テスト戦略
@@ -1739,7 +3670,7 @@ export class InventoryService {
 ### テストツール
 - **Vitest**: 高速単体テスト
 - **Supertest**: API統合テスト
-- **Stagehand**: Flutter E2Eテスト
+- **Detox**: React Native E2Eテスト
 - **Testcontainers**: 統合テスト用コンテナ環境
 
 ### テストデータ管理
@@ -1972,17 +3903,17 @@ const DATA_RETENTION = {
 ```
 inventory-app/
 ├── apps/
-│   ├── mobile/                 # Flutter アプリ
+│   ├── mobile/                 # React Native + Expo アプリ
 │   ├── web-admin/             # React 管理画面
 │   ├── admin-bff/             # Hono Admin BFF
 │   ├── external-api/          # Hono 外部API
 │   └── services/
-│       ├── auth-service/      # NestJS 認証サービス
-│       ├── inventory-service/ # NestJS 備蓄品サービス
-│       ├── org-service/       # NestJS 組織サービス
-│       ├── notify-service/    # NestJS 通知サービス
-│       ├── file-service/      # NestJS ファイルサービス
-│       └── product-service/   # NestJS 商品情報サービス
+│       ├── auth-service/      # Hono 認証サービス
+│       ├── inventory-service/ # Hono 備蓄品サービス
+│       ├── org-service/       # Hono 組織サービス
+│       ├── notify-service/    # Hono 通知サービス
+│       ├── file-service/      # Hono ファイルサービス
+│       └── product-service/   # Hono 商品情報サービス
 ├── packages/
 │   ├── shared-types/          # 共有型定義 (type-fest活用)
 │   ├── trpc-router/          # tRPC ルーター定義
@@ -2251,73 +4182,131 @@ export default defineConfig({
 });
 ```
 
-**Flutter設定**
-```yaml
-# apps/mobile/pubspec.yaml
-name: inventory_management_app
-description: 備蓄管理アプリケーション
-
-publish_to: 'none'
-
-version: 1.0.0+1
-
-environment:
-  sdk: '>=3.0.0 <4.0.0'
-
-dependencies:
-  flutter:
-    sdk: flutter
-  
-  # Core
-  flutter_riverpod: ^2.4.0
-  freezed_annotation: ^2.4.0
-  json_annotation: ^4.8.0
-  
-  # gRPC
-  grpc: ^3.2.0
-  protobuf: ^3.1.0
-  
-  # Storage
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
-  shared_preferences: ^2.2.0
-  
-  # UI
-  flutter_hooks: ^0.20.0
-  cached_network_image: ^3.3.0
-  
-  # Utils
-  dio: ^5.3.0
-  image_picker: ^1.0.0
-  barcode_scan2: ^4.2.0
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  
-  build_runner: ^2.4.0
-  freezed: ^2.4.0
-  json_serializable: ^6.7.0
-  flutter_lints: ^3.0.0
-
-flutter:
-  uses-material-design: true
-  
-  assets:
-    - assets/images/
-    - assets/icons/
+**React Native + Expo設定**
+```json
+// apps/mobile/package.json
+{
+  "name": "inventory-management-app",
+  "version": "1.0.0",
+  "description": "備蓄管理アプリケーション",
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "build:android": "eas build --platform android",
+    "build:ios": "eas build --platform ios",
+    "test": "jest",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo": "~50.0.0",
+    "react": "^18.2.0",
+    "react-native": "0.73.0",
+    
+    // Core
+    "zustand": "^4.4.0",
+    "immer": "^10.0.0",
+    
+    // Navigation
+    "@react-navigation/native": "^6.1.0",
+    "@react-navigation/stack": "^6.3.0",
+    "react-native-screens": "~3.29.0",
+    "react-native-safe-area-context": "4.8.0",
+    
+    // HTTP Client
+    "@hono/node-server": "^1.8.0",
+    "hono": "^4.0.0",
+    
+    // Storage
+    "@react-native-async-storage/async-storage": "1.21.0",
+    "expo-sqlite": "~13.0.0",
+    
+    // Camera & Scanner
+    "expo-camera": "~14.0.0",
+    "expo-barcode-scanner": "~12.7.0",
+    "expo-image-picker": "~14.7.0",
+    
+    // UI
+    "@expo/vector-icons": "^14.0.0",
+    "react-native-elements": "^3.4.0",
+    "react-native-paper": "^5.11.0",
+    
+    // Utils
+    "neverthrow": "^6.1.0",
+    "zod": "^3.22.0",
+    "date-fns": "^3.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~18.2.45",
+    "@types/react-native": "^0.72.0",
+    "typescript": "^5.1.0",
+    "jest": "^29.2.1",
+    "@testing-library/react-native": "^12.4.0",
+    "detox": "^20.13.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0"
+  }
+}
 ```
 
-**SWC (NestJS サービス)**
-```typescript
-// apps/services/auth-service/nest-cli.json
+```json
+// apps/mobile/app.json
 {
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
+  "expo": {
+    "name": "備蓄管理アプリ",
+    "slug": "inventory-management-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.company.inventory-management"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.company.inventorymanagement",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-barcode-scanner",
+      "expo-image-picker"
+    ]
+  }
+}
+```
+
+**SWC (Hono サービス)**
+```typescript
+// apps/services/auth-service/tsconfig.json
+{
+  "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
-    "deleteOutDir": true,
-    "builder": "swc",
-    "typeCheck": true
+    "outDir": "dist",
+    "types": ["node", "@cloudflare/workers-types"]
   }
 }
 ```
@@ -2581,12 +4570,10 @@ export const createNotFoundError = (resource: string, id: string): NotFoundError
 **サービス層でのResult型活用**
 ```typescript
 // apps/services/inventory-service/src/inventory.service.ts
-import { Injectable } from '@nestjs/common';
 import { Result, ok, err } from 'neverthrow';
 import type { AppResult } from '@packages/error-handling';
 import type { InventoryItem, CreateInventoryItemRequest } from '@packages/shared-types';
 
-@Injectable()
 export class InventoryService {
   async createItem(
     request: CreateInventoryItemRequest
