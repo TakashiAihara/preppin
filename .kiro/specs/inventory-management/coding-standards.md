@@ -121,11 +121,21 @@ src/
 
 ```typescript
 // ✅ 良い例: 命名規約
-// 変数名・関数名: camelCase
+// 変数名: camelCase（名詞）
 const inventoryItems = []
 const currentUser = {}
-const calculateExpiryDate = () => {}
-const getUserById = () => {}
+
+// 関数名・メソッド名: camelCase + 動詞で始める
+const calculateExpiryDate = () => {}      // ✅ calculate（動詞）
+const getUserById = () => {}              // ✅ get（動詞）
+const createInventoryItem = () => {}      // ✅ create（動詞）
+const updateUserProfile = () => {}        // ✅ update（動詞）
+const deleteOrganization = () => {}       // ✅ delete（動詞）
+const validateInput = () => {}            // ✅ validate（動詞）
+const processPayment = () => {}           // ✅ process（動詞）
+const sendNotification = () => {}         // ✅ send（動詞）
+const parseInventoryData = () => {}       // ✅ parse（動詞）
+const formatDate = () => {}               // ✅ format（動詞）
 
 // boolean変数: is, has, can, should, will などの接頭語を使用
 const isAuthenticated = true
@@ -159,6 +169,18 @@ type UserNotificationService = {  // ✅ 具体的な名前
   sendEmail: (userId: string, message: string) => Promise<void>
   sendPush: (userId: string, notification: PushNotification) => Promise<void>
 }
+
+// ❌ 悪い例: 関数名が動詞で始まらない（名詞的な命名）
+const expiryDate = () => {}        // ❌ calculateExpiryDateにすべき
+const userById = () => {}          // ❌ getUserByIdにすべき
+const inventoryItem = () => {}     // ❌ createInventoryItemにすべき
+const userProfile = () => {}       // ❌ updateUserProfileにすべき
+const organization = () => {}      // ❌ deleteOrganizationにすべき
+const input = () => {}             // ❌ validateInputにすべき
+const payment = () => {}           // ❌ processPaymentにすべき
+const notification = () => {}      // ❌ sendNotificationにすべき
+const inventoryData = () => {}     // ❌ parseInventoryDataにすべき
+const date = () => {}              // ❌ formatDateにすべき
 
 // ❌ 悪い例: boolean変数の曖昧な命名
 const authenticated = true         // ❌ isAuthenticatedにすべき
@@ -1602,7 +1624,7 @@ export class InventoryItem {
   public get name(): string { return this._props.name; }
   public get quantity(): number { return this._props.quantity; }
 
-  // ビジネスロジック
+  // ✅ 良い例: メソッド名も動詞で始める
   public consume(amount: number, reason?: string): Result<ConsumptionRecord, ConsumeError> {
     if (amount <= 0) {
       return err(new ConsumeError('Amount must be positive'));
@@ -1632,7 +1654,7 @@ export class InventoryItem {
     ));
   }
 
-  public updateQuantity(newQuantity: number): Result<void, ValidationError> {
+  public updateQuantity(newQuantity: number): Result<void, ValidationError> {  // ✅ update（動詞）
     if (newQuantity < 0) {
       return err(new ValidationError('Quantity cannot be negative'));
     }
@@ -1643,7 +1665,7 @@ export class InventoryItem {
     return ok(undefined);
   }
 
-  public getExpiryStatus(currentDate: Date = new Date()): ExpiryStatus {
+  public getExpiryStatus(currentDate: Date = new Date()): ExpiryStatus {      // ✅ get（動詞）
     const targetDate = this._props.expiryDate || this._props.bestBeforeDate;
     if (!targetDate) return ExpiryStatus.NO_EXPIRY;
 
@@ -1656,6 +1678,32 @@ export class InventoryItem {
     if (daysUntilExpiry <= 7) return ExpiryStatus.WARNING;
     if (daysUntilExpiry <= 30) return ExpiryStatus.CAUTION;
     return ExpiryStatus.SAFE;
+  }
+
+  public calculateDaysUntilExpiry(currentDate: Date = new Date()): number {   // ✅ calculate（動詞）
+    const targetDate = this._props.expiryDate || this._props.bestBeforeDate;
+    if (!targetDate) return Infinity;
+    
+    return Math.ceil(
+      (targetDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+  }
+
+  public markAsConsumed(amount: number, reason?: string): void {              // ✅ mark（動詞）
+    this._props.quantity = Math.max(0, this._props.quantity - amount);
+    this._updatedAt = new Date();
+    // 消費記録をドメインイベントとして発行
+    this.addDomainEvent(new ItemConsumedEvent(this.id, amount, reason));
+  }
+
+  public restockItem(amount: number): Result<void, ValidationError> {        // ✅ restock（動詞）
+    if (amount <= 0) {
+      return err(new ValidationError('Restock amount must be positive'));
+    }
+
+    this._props.quantity += amount;
+    this._updatedAt = new Date();
+    return ok(undefined);
   }
 
   // ✅ 良い例: boolean メソッド名も適切な接頭語
@@ -2455,6 +2503,7 @@ export class BadInventoryService {
 - **`then`チェーンは極力使わず、`async/await`で統一**
 - **ファイル名は必ずケバブケース、ディレクトリでレイヤー表現時は接尾辞不要**
 - **変数名・関数名はcamelCase、クラス・型名はPascalCase**
+- **関数名・メソッド名は動詞で始める（action-oriented naming）**
 - **boolean変数は`is`、`has`、`can`、`should`、`will`などの接頭語を使用**
 - **インターフェースは具体名、`I`プレフィックス・`***Interface`接尾辞禁止**
 - **Enumは避けUnion型で表現、配列は`ReadonlyArray`推奨**
