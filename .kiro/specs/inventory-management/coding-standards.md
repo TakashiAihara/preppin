@@ -127,6 +127,18 @@ const currentUser = {}
 const calculateExpiryDate = () => {}
 const getUserById = () => {}
 
+// boolean変数: is, has, can, should, will などの接頭語を使用
+const isAuthenticated = true
+const hasPermission = false
+const canEdit = true
+const shouldRefresh = false
+const willExpire = true
+const isLoading = false
+const hasExpired = true
+const canDelete = false
+const shouldNotify = true
+const willUpdate = false
+
 // クラス名: PascalCase
 class InventoryItem {}
 class UserAuthentication {}
@@ -148,7 +160,18 @@ type UserNotificationService = {  // ✅ 具体的な名前
   sendPush: (userId: string, notification: PushNotification) => Promise<void>
 }
 
-// ❌ 悪い例: 曖昧な命名
+// ❌ 悪い例: boolean変数の曖昧な命名
+const authenticated = true         // ❌ isAuthenticatedにすべき
+const permission = false           // ❌ hasPermissionにすべき
+const edit = true                  // ❌ canEditにすべき
+const refresh = false              // ❌ shouldRefreshにすべき
+const expire = true                // ❌ willExpireにすべき
+const loading = false              // ❌ isLoadingにすべき
+const expired = true               // ❌ hasExpiredにすべき
+const visible = false              // ❌ isVisibleにすべき
+const enabled = true               // ❌ isEnabledにすべき
+
+// ❌ 悪い例: インターフェースの曖昧な命名
 interface IRepository {}           // ❌ Iプレフィックス禁止
 interface RepositoryInterface {}   // ❌ ***Interface接尾辞禁止
 interface Repository {}            // ❌ 抽象的すぎる
@@ -613,7 +636,7 @@ export const parseInventoryItem = (data: unknown) => {
   }
 }
 
-// 引数の分割代入でコードを簡潔に
+// 引数の分割代入でコードを簡潔に + boolean変数の適切な命名
 export const createInventoryItem = async ({
   name,
   quantity,
@@ -622,16 +645,23 @@ export const createInventoryItem = async ({
   expiryDate,
   ...optionalFields
 }: CreateInventoryItemRequest): Promise<Result<InventoryItem, CreateError>> => {
-  // letを使わず、constで値を作成
+  // letを使わず、constで値を作成 + boolean変数には適切な接頭語
   const validatedName = name.trim()
   const normalizedQuantity = Math.max(0, quantity)
+  const hasExpiryDate = Boolean(expiryDate)           // ✅ has接頭語
+  const isValidQuantity = normalizedQuantity > 0      // ✅ is接頭語
+  const canCreateItem = validatedName && isValidQuantity  // ✅ can接頭語
+  
+  if (!canCreateItem) {
+    return err('VALIDATION_ERROR')
+  }
   
   const item = {
     name: validatedName,
     quantity: normalizedQuantity,
     unit,
     organizationId,
-    expiryDate,
+    expiryDate: hasExpiryDate ? expiryDate : undefined,
     ...optionalFields
   }
   
@@ -1628,9 +1658,35 @@ export class InventoryItem {
     return ExpiryStatus.SAFE;
   }
 
+  // ✅ 良い例: boolean メソッド名も適切な接頭語
   public isLowStock(): boolean {
     return this._props.minQuantity !== undefined && 
            this._props.quantity <= this._props.minQuantity;
+  }
+
+  public hasExpired(currentDate: Date = new Date()): boolean {
+    const targetDate = this._props.expiryDate || this._props.bestBeforeDate;
+    return targetDate ? targetDate < currentDate : false;
+  }
+
+  public canBeConsumed(amount: number): boolean {
+    return amount > 0 && amount <= this._props.quantity;
+  }
+
+  public shouldAlert(): boolean {
+    const isExpiringSoon = this.getExpiryStatus() === ExpiryStatus.CRITICAL;
+    const isLowOnStock = this.isLowStock();
+    return isExpiringSoon || isLowOnStock;
+  }
+
+  public willExpireWithin(days: number): boolean {
+    const targetDate = this._props.expiryDate || this._props.bestBeforeDate;
+    if (!targetDate) return false;
+    
+    const daysUntilExpiry = Math.ceil(
+      (targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    );
+    return daysUntilExpiry <= days && daysUntilExpiry >= 0;
   }
 }
 ```
@@ -2399,6 +2455,7 @@ export class BadInventoryService {
 - **`then`チェーンは極力使わず、`async/await`で統一**
 - **ファイル名は必ずケバブケース、ディレクトリでレイヤー表現時は接尾辞不要**
 - **変数名・関数名はcamelCase、クラス・型名はPascalCase**
+- **boolean変数は`is`、`has`、`can`、`should`、`will`などの接頭語を使用**
 - **インターフェースは具体名、`I`プレフィックス・`***Interface`接尾辞禁止**
 - **Enumは避けUnion型で表現、配列は`ReadonlyArray`推奨**
 - **`interface`より`type`を優先、`type-fest`活用で複雑な型を簡潔に**
