@@ -18,7 +18,13 @@
 - 純粋関数の推奨
 - Result型（neverthrow）によるエラーハンドリング
 
-### 3. テスト駆動開発（TDD）
+### 3. 簡潔性の原則
+- 記述量は最小限に抑制（パフォーマンス影響がない限り）
+- `function`より`const`によるアロー関数を推奨
+- コメントは最小限、型とシグネチャで意図を表現
+- セルフドキュメンティングコードを目指す
+
+### 4. テスト駆動開発（TDD）
 - すべての機能にテストを必須
 - テストファーストの開発アプローチ
 - 単体テスト・統合テスト・E2Eテストの3層構造
@@ -88,67 +94,86 @@ export interface CreateItemRequest {
 ### エラーハンドリング規約
 
 ```typescript
-// ✅ 良い例: neverthrow Result型の使用
-import { Result, ok, err } from 'neverthrow';
+// ✅ 良い例: neverthrow Result型での簡潔なエラーハンドリング
+import { Result, ok, err } from 'neverthrow'
 
 export type CreateInventoryItemError = 
   | 'VALIDATION_ERROR'
   | 'PERMISSION_DENIED'
   | 'ORGANIZATION_NOT_FOUND'
-  | 'DUPLICATE_BARCODE';
+  | 'DUPLICATE_BARCODE'
 
-export async function createInventoryItem(
+export const createInventoryItem = async (
   request: CreateInventoryItemRequest
-): Promise<Result<InventoryItem, CreateInventoryItemError>> {
-  // バリデーション
-  const validationResult = validateCreateRequest(request);
-  if (validationResult.isErr()) {
-    return err('VALIDATION_ERROR');
-  }
+): Promise<Result<InventoryItem, CreateInventoryItemError>> => {
+  const validationResult = validateCreateRequest(request)
+  if (validationResult.isErr()) return err('VALIDATION_ERROR')
 
-  // ビジネスロジック実行
   try {
-    const item = await inventoryRepository.create(request);
-    return ok(item);
+    const item = await inventoryRepository.create(request)
+    return ok(item)
   } catch (error) {
-    if (error instanceof PermissionError) {
-      return err('PERMISSION_DENIED');
-    }
-    if (error instanceof DuplicateBarcodeError) {
-      return err('DUPLICATE_BARCODE');
-    }
-    throw error; // 予期しないエラーは再スロー
+    if (error instanceof PermissionError) return err('PERMISSION_DENIED')
+    if (error instanceof DuplicateBarcodeError) return err('DUPLICATE_BARCODE')
+    throw error
   }
 }
 
-// ❌ 悪い例: 例外ベースのエラーハンドリング
+const validateAndCreate = (request: CreateInventoryItemRequest) =>
+  validateCreateRequest(request)
+    .andThen(() => inventoryRepository.create(request))
+    .mapErr(mapToCreateItemError)
+
+// ❌ 悪い例: 冗長なエラーハンドリング
 export async function createItem(request: any): Promise<any> {
   try {
+    // 何をしているかわからない
     return await repository.create(request);
   } catch (error) {
+    // 意味のないエラーメッセージ
     throw new Error('Something went wrong');
   }
 }
 ```
 
-### 関数・クラス定義規約
+### 関数定義規約
 
 ```typescript
-// ✅ 良い例: 純粋関数の推奨
+// ✅ 良い例: const + アロー関数（推奨）
 export const calculateExpiryStatus = (
   expiryDate: Date,
-  currentDate: Date = new Date()
+  currentDate = new Date()
 ): ExpiryStatus => {
   const daysUntilExpiry = Math.ceil(
     (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-  );
+  )
 
+  if (daysUntilExpiry < 0) return 'EXPIRED'
+  if (daysUntilExpiry <= 3) return 'CRITICAL'
+  if (daysUntilExpiry <= 7) return 'WARNING'
+  if (daysUntilExpiry <= 30) return 'CAUTION'
+  return 'SAFE'
+}
+
+const validateItemName = (name: string): Result<string, ValidationError> =>
+  name.trim().length === 0 
+    ? err(new ValidationError('Name cannot be empty'))
+    : ok(name.trim())
+
+const calculateItemQuantity = (current: number, consumed: number) => 
+  Math.max(0, current - consumed)
+
+// ❌ 悪い例: function宣言（必要な場合以外は避ける）
+function calculateExpiryStatus(expiryDate: Date): ExpiryStatus {
+  // 冗長なコメント（型で表現できる）
+  const currentDate = new Date() // 現在日時を取得
+  const daysUntilExpiry = Math.ceil(
+    (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+  // 期限切れチェック
   if (daysUntilExpiry < 0) return 'EXPIRED';
-  if (daysUntilExpiry <= 3) return 'CRITICAL';
-  if (daysUntilExpiry <= 7) return 'WARNING';
-  if (daysUntilExpiry <= 30) return 'CAUTION';
-  return 'SAFE';
-};
+  // ...
+}
 
 // ✅ 良い例: DDD エンティティ
 export class InventoryItem {
@@ -705,73 +730,49 @@ message Item {
 ### gRPC エラーハンドリング規約
 
 ```typescript
-// ✅ 良い例: TypeScript gRPCサーバー
-import { status } from '@grpc/grpc-js';
-import { RpcException } from '@nestjs/microservices';
+// ✅ 良い例: 簡潔なgRPCサーバー
+import { status } from '@grpc/grpc-js'
+import { RpcException } from '@nestjs/microservices'
 
 @Injectable()
 export class InventoryGrpcService {
-  async createItem(request: CreateItemRequest): Promise<InventoryItem> {
-    try {
-      // バリデーション
-      const validationResult = await this.validateCreateRequest(request);
-      if (validationResult.isErr()) {
-        throw new RpcException({
-          code: status.INVALID_ARGUMENT,
-          message: 'Validation failed',
-          details: validationResult.error,
-        });
-      }
-
-      // 権限チェック
-      const hasPermission = await this.checkPermission(
-        request.organizationId,
-        context.userId,
-        'write'
-      );
-      if (!hasPermission) {
-        throw new RpcException({
-          code: status.PERMISSION_DENIED,
-          message: 'Insufficient permissions',
-        });
-      }
-
-      // ビジネスロジック実行
-      const result = await this.inventoryService.createItem(request);
-      return result.match(
-        (item) => item,
-        (error) => {
-          switch (error) {
-            case 'ORGANIZATION_NOT_FOUND':
-              throw new RpcException({
-                code: status.NOT_FOUND,
-                message: 'Organization not found',
-              });
-            case 'DUPLICATE_BARCODE':
-              throw new RpcException({
-                code: status.ALREADY_EXISTS,
-                message: 'Barcode already exists',
-              });
-            default:
-              throw new RpcException({
-                code: status.INTERNAL,
-                message: 'Internal server error',
-              });
-          }
-        }
-      );
-    } catch (error) {
-      if (error instanceof RpcException) {
-        throw error;
-      }
-      
-      // 予期しないエラー
-      this.logger.error('Unexpected error in createItem', error);
+  createItem = async (request: CreateItemRequest): Promise<InventoryItem> => {
+    const validationResult = await this.validateCreateRequest(request)
+    if (validationResult.isErr()) {
       throw new RpcException({
-        code: status.INTERNAL,
-        message: 'Internal server error',
-      });
+        code: status.INVALID_ARGUMENT,
+        message: 'Validation failed',
+        details: validationResult.error,
+      })
     }
+
+    const hasPermission = await this.checkPermission(
+      request.organizationId,
+      context.userId,
+      'write'
+    )
+    if (!hasPermission) {
+      throw new RpcException({
+        code: status.PERMISSION_DENIED,
+        message: 'Insufficient permissions',
+      })
+    }
+
+    const result = await this.inventoryService.createItem(request)
+    return result.match(
+      (item) => item,
+      (error) => {
+        throw new RpcException(this.mapErrorToRpcException(error))
+      }
+    )
+  }
+
+  private mapErrorToRpcException = (error: CreateInventoryItemError) => {
+    const errorMap = {
+      ORGANIZATION_NOT_FOUND: { code: status.NOT_FOUND, message: 'Organization not found' },
+      DUPLICATE_BARCODE: { code: status.ALREADY_EXISTS, message: 'Barcode already exists' },
+    }
+    return errorMap[error] || { code: status.INTERNAL, message: 'Internal server error' }
   }
 }
 ```
@@ -993,7 +994,7 @@ export class InventoryItem {
 ### ユースケース規約
 
 ```typescript
-// ✅ 良い例: ユースケース実装
+// ✅ 良い例: 簡潔なユースケース実装
 @Injectable()
 export class CreateInventoryItemUseCase {
   constructor(
@@ -1003,177 +1004,135 @@ export class CreateInventoryItemUseCase {
     private readonly logger: Logger
   ) {}
 
-  async execute(
+  execute = async (
     command: CreateInventoryItemCommand
-  ): Promise<Result<InventoryItemDto, CreateInventoryItemError>> {
-    try {
-      // 1. 権限チェック
-      const organization = await this.organizationRepository.findById(
-        command.organizationId
-      );
-      if (!organization) {
-        return err('ORGANIZATION_NOT_FOUND');
-      }
+  ): Promise<Result<InventoryItemDto, CreateInventoryItemError>> => {
+    const organization = await this.organizationRepository.findById(command.organizationId)
+    if (!organization) return err('ORGANIZATION_NOT_FOUND')
+    if (!organization.hasWritePermission(command.userId)) return err('PERMISSION_DENIED')
 
-      const hasPermission = organization.hasWritePermission(command.userId);
-      if (!hasPermission) {
-        return err('PERMISSION_DENIED');
-      }
-
-      // 2. バーコード重複チェック
-      if (command.barcode) {
-        const existingItem = await this.inventoryRepository.findByBarcode(
-          command.organizationId,
-          command.barcode
-        );
-        if (existingItem) {
-          return err('DUPLICATE_BARCODE');
-        }
-      }
-
-      // 3. エンティティ作成
-      const itemResult = InventoryItem.create({
-        organizationId: command.organizationId,
-        name: command.name,
-        brand: command.brand,
-        category: command.category,
-        quantity: command.quantity,
-        unit: command.unit,
-        minQuantity: command.minQuantity,
-        expiryDate: command.expiryDate,
-        bestBeforeDate: command.bestBeforeDate,
-        expiryType: command.expiryType,
-        storageLocation: command.storageLocation,
-        price: command.price,
-        barcode: command.barcode,
-        asin: command.asin,
-        tags: command.tags,
-        notes: command.notes,
-      });
-
-      if (itemResult.isErr()) {
-        return err('VALIDATION_ERROR');
-      }
-
-      const item = itemResult.value;
-
-      // 4. 永続化
-      await this.inventoryRepository.save(item);
-
-      // 5. ドメインイベント発行
-      await this.eventBus.publishAll(item.getDomainEvents());
-
-      // 6. DTOに変換して返却
-      const dto = InventoryItemDto.fromEntity(item);
-      
-      this.logger.log(`Inventory item created: ${item.id}`, {
-        itemId: item.id,
-        organizationId: command.organizationId,
-        userId: command.userId,
-      });
-
-      return ok(dto);
-    } catch (error) {
-      this.logger.error('Failed to create inventory item', error, {
-        command,
-      });
-      return err('INTERNAL_ERROR');
+    if (command.barcode) {
+      const existingItem = await this.inventoryRepository.findByBarcode(
+        command.organizationId,
+        command.barcode
+      )
+      if (existingItem) return err('DUPLICATE_BARCODE')
     }
+
+    const itemResult = InventoryItem.create(command)
+    if (itemResult.isErr()) return err('VALIDATION_ERROR')
+
+    const item = itemResult.value
+    await this.inventoryRepository.save(item)
+    await this.eventBus.publishAll(item.getDomainEvents())
+
+    this.logger.log(`Inventory item created: ${item.id}`, {
+      itemId: item.id,
+      organizationId: command.organizationId,
+      userId: command.userId,
+    })
+
+    return ok(InventoryItemDto.fromEntity(item))
   }
 }
 ```
 
 ## テスト規約
 
-### 単体テスト規約
+### 単体テスト規約（Given-When-Then + Rails風ネスト構造）
 
 ```typescript
-// ✅ 良い例: エンティティテスト
+// ✅ 良い例: Given-When-Then形式のテスト構造
 describe('InventoryItem', () => {
-  describe('create', () => {
-    it('should create inventory item with valid props', () => {
-      // Arrange
-      const props: CreateInventoryItemProps = {
-        organizationId: OrganizationId.generate(),
-        name: 'Test Item',
-        category: InventoryCategory.FOOD,
-        quantity: 10,
-        unit: '個',
-        expiryType: ExpiryType.BEST_BEFORE,
-        bestBeforeDate: new Date('2024-12-31'),
-        tags: ['test', 'food'],
-      };
+  describe('Given valid props', () => {
+    describe('When creating inventory item', () => {
+      describe('Then should create item successfully', () => {
+        it('returns ok result with created item', () => {
+          const props: CreateInventoryItemProps = {
+            organizationId: OrganizationId.generate(),
+            name: 'Test Item',
+            category: InventoryCategory.FOOD,
+            quantity: 10,
+            unit: '個',
+            expiryType: ExpiryType.BEST_BEFORE,
+            bestBeforeDate: new Date('2024-12-31'),
+            tags: ['test', 'food'],
+          }
 
-      // Act
-      const result = InventoryItem.create(props);
+          const result = InventoryItem.create(props)
 
-      // Assert
-      expect(result.isOk()).toBe(true);
-      const item = result.value;
-      expect(item.name).toBe('Test Item');
-      expect(item.quantity).toBe(10);
-      expect(item.tags).toEqual(['test', 'food']);
-    });
-
-    it('should return validation error for empty name', () => {
-      // Arrange
-      const props: CreateInventoryItemProps = {
-        organizationId: OrganizationId.generate(),
-        name: '',
-        category: InventoryCategory.FOOD,
-        quantity: 10,
-        unit: '個',
-        expiryType: ExpiryType.BEST_BEFORE,
-        tags: [],
-      };
-
-      // Act
-      const result = InventoryItem.create(props);
-
-      // Assert
-      expect(result.isErr()).toBe(true);
-      expect(result.error).toContainEqual(
-        expect.objectContaining({
-          message: 'Name cannot be empty',
+          expect(result.isOk()).toBe(true)
+          const item = result.value
+          expect(item.name).toBe('Test Item')
+          expect(item.quantity).toBe(10)
+          expect(item.tags).toEqual(['test', 'food'])
         })
-      );
-    });
-  });
+      })
+    })
+  })
 
-  describe('consume', () => {
-    it('should consume item and return consumption record', () => {
-      // Arrange
-      const item = createTestInventoryItem({ quantity: 10 });
+  describe('Given empty name', () => {
+    describe('When creating inventory item', () => {
+      describe('Then should return validation error', () => {
+        it('returns error result with name validation message', () => {
+          const props: CreateInventoryItemProps = {
+            organizationId: OrganizationId.generate(),
+            name: '',
+            category: InventoryCategory.FOOD,
+            quantity: 10,
+            unit: '個',
+            expiryType: ExpiryType.BEST_BEFORE,
+            tags: [],
+          }
 
-      // Act
-      const result = item.consume(3, 'Daily use');
+          const result = InventoryItem.create(props)
 
-      // Assert
-      expect(result.isOk()).toBe(true);
-      expect(item.quantity).toBe(7);
-      
-      const record = result.value;
-      expect(record.amount).toBe(3);
-      expect(record.reason).toBe('Daily use');
-    });
+          expect(result.isErr()).toBe(true)
+          expect(result.error).toContainEqual(
+            expect.objectContaining({
+              message: 'Name cannot be empty',
+            })
+          )
+        })
+      })
+    })
+  })
 
-    it('should return error when consuming more than available', () => {
-      // Arrange
-      const item = createTestInventoryItem({ quantity: 5 });
+  describe('Given item with quantity 10', () => {
+    describe('When consuming 3 items', () => {
+      describe('Then should consume successfully', () => {
+        it('reduces quantity and returns consumption record', () => {
+          const item = createTestInventoryItem({ quantity: 10 })
 
-      // Act
-      const result = item.consume(10);
+          const result = item.consume(3, 'Daily use')
 
-      // Assert
-      expect(result.isErr()).toBe(true);
-      expect(result.error.message).toBe('Insufficient quantity');
-      expect(item.quantity).toBe(5); // 数量は変更されない
-    });
-  });
-});
+          expect(result.isOk()).toBe(true)
+          expect(item.quantity).toBe(7)
+          
+          const record = result.value
+          expect(record.amount).toBe(3)
+          expect(record.reason).toBe('Daily use')
+        })
+      })
+    })
 
-// テストヘルパー
-function createTestInventoryItem(overrides: Partial<CreateInventoryItemProps> = {}): InventoryItem {
+    describe('When consuming more than available', () => {
+      describe('Then should return error', () => {
+        it('returns error and does not change quantity', () => {
+          const item = createTestInventoryItem({ quantity: 5 })
+
+          const result = item.consume(10)
+
+          expect(result.isErr()).toBe(true)
+          expect(result.error.message).toBe('Insufficient quantity')
+          expect(item.quantity).toBe(5)
+        })
+      })
+    })
+  })
+})
+
+const createTestInventoryItem = (overrides: Partial<CreateInventoryItemProps> = {}): InventoryItem => {
   const defaultProps: CreateInventoryItemProps = {
     organizationId: OrganizationId.generate(),
     name: 'Test Item',
@@ -1182,26 +1141,26 @@ function createTestInventoryItem(overrides: Partial<CreateInventoryItemProps> = 
     unit: '個',
     expiryType: ExpiryType.BEST_BEFORE,
     tags: [],
-  };
+  }
 
-  const props = { ...defaultProps, ...overrides };
-  const result = InventoryItem.create(props);
+  const props = { ...defaultProps, ...overrides }
+  const result = InventoryItem.create(props)
   
   if (result.isErr()) {
-    throw new Error(`Failed to create test item: ${result.error}`);
+    throw new Error(`Failed to create test item: ${result.error}`)
   }
   
-  return result.value;
+  return result.value
 }
 ```
 
-### Flutter テスト規約
+### Flutter テスト規約（Given-When-Then + Rails風ネスト構造）
 
 ```dart
-// ✅ 良い例: Flutter ウィジェットテスト
+// ✅ 良い例: Given-When-Then形式のFlutterテスト
 void main() {
   group('InventoryItemCard', () {
-    late InventoryItem testItem;
+    late InventoryItem testItem
 
     setUp(() {
       testItem = const InventoryItem(
@@ -1213,64 +1172,73 @@ void main() {
         expiryType: ExpiryType.bestBefore,
         createdAt: '2024-01-01T00:00:00Z',
         updatedAt: '2024-01-01T00:00:00Z',
-      );
-    });
+      )
+    })
 
-    testWidgets('should display item information correctly', (tester) async {
-      // Arrange
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: InventoryItemCard(item: testItem),
-          ),
-        ),
-      );
+    group('Given inventory item with basic data', () {
+      group('When widget is rendered', () {
+        group('Then should display item information correctly', () {
+          testWidgets('shows item name and quantity', (tester) async {
+            await tester.pumpWidget(
+              MaterialApp(
+                home: Scaffold(
+                  body: InventoryItemCard(item: testItem),
+                ),
+              ),
+            )
 
-      // Assert
-      expect(find.text('Test Item'), findsOneWidget);
-      expect(find.text('10 個'), findsOneWidget);
-    });
+            expect(find.text('Test Item'), findsOneWidget)
+            expect(find.text('10 個'), findsOneWidget)
+          })
+        })
+      })
 
-    testWidgets('should call onTap when card is tapped', (tester) async {
-      // Arrange
-      bool wasTapped = false;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: InventoryItemCard(
-              item: testItem,
-              onTap: () => wasTapped = true,
-            ),
-          ),
-        ),
-      );
+      group('When card is tapped', () {
+        group('Then should call onTap callback', () {
+          testWidgets('invokes onTap with true', (tester) async {
+            bool wasTapped = false
+            await tester.pumpWidget(
+              MaterialApp(
+                home: Scaffold(
+                  body: InventoryItemCard(
+                    item: testItem,
+                    onTap: () => wasTapped = true,
+                  ),
+                ),
+              ),
+            )
 
-      // Act
-      await tester.tap(find.byType(InventoryItemCard));
-      await tester.pumpAndSettle();
+            await tester.tap(find.byType(InventoryItemCard))
+            await tester.pumpAndSettle()
 
-      // Assert
-      expect(wasTapped, isTrue);
-    });
+            expect(wasTapped, isTrue)
+          })
+        })
+      })
+    })
 
-    testWidgets('should show expiry status badge', (tester) async {
-      // Arrange
-      final expiringItem = testItem.copyWith(
-        expiryDate: DateTime.now().add(const Duration(days: 2)),
-      );
+    group('Given item expiring in 2 days', () {
+      group('When widget is rendered', () {
+        group('Then should show expiry status badge', () {
+          testWidgets('displays ExpiryStatusBadge widget', (tester) async {
+            final expiringItem = testItem.copyWith(
+              expiryDate: DateTime.now().add(const Duration(days: 2)),
+            )
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: InventoryItemCard(item: expiringItem),
-          ),
-        ),
-      );
+            await tester.pumpWidget(
+              MaterialApp(
+                home: Scaffold(
+                  body: InventoryItemCard(item: expiringItem),
+                ),
+              ),
+            )
 
-      // Assert
-      expect(find.byType(ExpiryStatusBadge), findsOneWidget);
-    });
-  });
+            expect(find.byType(ExpiryStatusBadge), findsOneWidget)
+          })
+        })
+      })
+    })
+  })
 }
 ```
 
@@ -1540,10 +1508,17 @@ export class BadInventoryService {
 この規約に従うことで：
 
 1. **型安全性**: コンパイル時エラー検出、ランタイムエラー削減
-2. **保守性**: 一貫したコード構造、理解しやすいコード
-3. **テスタビリティ**: 単体テスト・統合テスト・E2Eテストの容易性
-4. **パフォーマンス**: 効率的なデータベースクエリ、UI最適化
-5. **セキュリティ**: 入力値検証、認証・認可、監査ログ
-6. **スケーラビリティ**: DDD/Clean Architectureによる拡張性
+2. **簡潔性**: 最小限の記述量、セルフドキュメンティングコード
+3. **保守性**: 一貫したコード構造、理解しやすいアーキテクチャ
+4. **テスタビリティ**: Given-When-Then構造、Rails風ネストによる明確なテスト
+5. **パフォーマンス**: const + アロー関数、効率的なクエリ
+6. **セキュリティ**: 入力値検証、認証・認可、監査ログ
+7. **スケーラビリティ**: DDD/Clean Architectureによる拡張性
 
-すべての開発者がこの規約を遵守し、コードレビューで品質を担保することで、高品質な備蓄管理アプリケーションを構築できます。
+**開発原則**:
+- `function`より`const` + アロー関数を優先
+- コメントより型とシグネチャで意図を表現
+- 記述量は最小限（パフォーマンス影響がない限り）
+- Given-When-Thenによる明確なテスト構造
+
+すべての開発者がこの規約を遵守し、コードレビューで品質を担保することで、高品質で保守性の高い備蓄管理アプリケーションを構築できます。
