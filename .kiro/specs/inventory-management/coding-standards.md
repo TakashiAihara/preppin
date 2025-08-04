@@ -154,6 +154,13 @@ class InventoryItem {}
 class UserAuthentication {}
 class OrganizationMember {}
 
+// Reactコンポーネント名: PascalCase + named export必須（default export禁止）
+export const InventoryItemCard = () => {}     // ✅ PascalCase + named export
+export const UserProfileForm = () => {}       // ✅ PascalCase + named export
+export const OrganizationMemberList = () => {} // ✅ PascalCase + named export
+export const ExpiryStatusBadge = () => {}     // ✅ PascalCase + named export
+export const LoadingSpinner = () => {}        // ✅ PascalCase + named export
+
 // 型名: PascalCase
 type UserId = Opaque<string, 'UserId'>
 type CreateInventoryItemRequest = {}
@@ -169,6 +176,18 @@ type UserNotificationService = {  // ✅ 具体的な名前
   sendEmail: (userId: string, message: string) => Promise<void>
   sendPush: (userId: string, notification: PushNotification) => Promise<void>
 }
+
+// ❌ 悪い例: Reactコンポーネントのdefault export使用
+const inventoryItemCard = () => {} // ❌ camelCase（PascalCaseにすべき）
+export default inventoryItemCard   // ❌ default export禁止
+
+export default () => {}            // ❌ 匿名default export禁止
+
+const InventoryItem = () => {}     // ❌ コンポーネント名が曖昧
+export default InventoryItem       // ❌ default export禁止
+
+// import時に異なる名前を使える（一貫性が保てない）
+// import MyInventoryCard from './inventory-item-card'  // ❌ 異なる名前でimport可能
 
 // ❌ 悪い例: 関数名が動詞で始まらない（名詞的な命名）
 const expiryDate = () => {}        // ❌ calculateExpiryDateにすべき
@@ -963,6 +982,387 @@ import { readFile } from 'fs/promises';
 import { InventoryItem } from '@repo/shared-types';
 ```
 
+## React コンポーネント規約
+
+### Reactコンポーネント命名・エクスポート規約
+
+```typescript
+// ✅ 良い例: PascalCase + named export
+export const InventoryItemCard = ({ item }: InventoryItemCardProps) => {
+  return (
+    <div className="inventory-item-card">
+      <h3>{item.name}</h3>
+      <p>数量: {item.quantity} {item.unit}</p>
+    </div>
+  )
+}
+
+export const UserProfileForm = ({ user, onSubmit }: UserProfileFormProps) => {
+  const handleSubmit = (data: UserProfileData) => {
+    onSubmit(data)
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* フォーム要素 */}
+    </form>
+  )
+}
+
+export const ExpiryStatusBadge = ({ status }: ExpiryStatusBadgeProps) => {
+  const getBadgeColor = (status: ExpiryStatus) => {
+    switch (status) {
+      case 'EXPIRED': return 'bg-red-500'
+      case 'CRITICAL': return 'bg-orange-500'
+      case 'WARNING': return 'bg-yellow-500'
+      default: return 'bg-green-500'
+    }
+  }
+
+  return (
+    <span className={`badge ${getBadgeColor(status)}`}>
+      {status}
+    </span>
+  )
+}
+
+// ✅ 良い例: import時も同じ名前を強制
+import { InventoryItemCard, UserProfileForm, ExpiryStatusBadge } from './components'
+
+// ❌ 悪い例: default export使用
+const inventoryItemCard = ({ item }) => {  // ❌ camelCase
+  return <div>{item.name}</div>
+}
+export default inventoryItemCard          // ❌ default export
+
+export default ({ item }) => {            // ❌ 匿名default export
+  return <div>{item.name}</div>
+}
+
+const InventoryCard = ({ item }) => {     // ❌ 名前が曖昧
+  return <div>{item.name}</div>
+}
+export default InventoryCard              // ❌ default export
+
+// ❌ 悪い例: import時に異なる名前が使える（一貫性がない）
+import MyCard from './inventory-item-card'      // ❌ 異なる名前でimport可能
+import ItemCard from './inventory-item-card'    // ❌ 異なる名前でimport可能
+import Whatever from './inventory-item-card'    // ❌ 全く違う名前も可能
+```
+
+### Reactコンポーネント型定義規約
+
+```typescript
+// ✅ 良い例: コンポーネントpropsの型定義
+export type InventoryItemCardProps = {
+  readonly item: InventoryItem
+  readonly onEdit?: (item: InventoryItem) => void
+  readonly onDelete?: (id: InventoryItemId) => void
+  readonly className?: string
+  readonly isSelected?: boolean
+}
+
+export type UserProfileFormProps = {
+  readonly user: User
+  readonly onSubmit: (data: UserProfileData) => Promise<void>
+  readonly isLoading?: boolean
+  readonly validationErrors?: ReadonlyArray<ValidationError>
+}
+
+export type ExpiryStatusBadgeProps = {
+  readonly status: ExpiryStatus
+  readonly size?: 'sm' | 'md' | 'lg'
+  readonly variant?: 'solid' | 'outline'
+}
+
+// ✅ 良い例: コンポーネントで使用する内部型
+type InventoryItemCardState = {
+  readonly isExpanded: boolean
+  readonly isHovered: boolean
+}
+
+type FormValidationState = {
+  readonly isValid: boolean
+  readonly errors: ReadonlyArray<string>
+  readonly touchedFields: ReadonlySet<string>
+}
+
+// ❌ 悪い例: 型定義なし・any使用
+export const BadComponent = ({ item, onEdit, onDelete }: any) => {  // ❌ any型
+  return <div>{item.name}</div>
+}
+
+export const AnotherBadComponent = ({ item, onEdit, onDelete }) => {  // ❌ 型定義なし
+  return <div>{item.name}</div>
+}
+```
+
+### Reactコンポーネント実装規約
+
+```typescript
+// ✅ 良い例: 完全なReactコンポーネント実装
+export const InventoryItemCard = ({
+  item,
+  onEdit,
+  onDelete,
+  className = '',
+  isSelected = false
+}: InventoryItemCardProps) => {
+  // ✅ 状態管理（必要な場合）
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+
+  // ✅ イベントハンドラー（動詞で始める）
+  const handleExpandToggle = useCallback(() => {
+    setIsExpanded(prev => !prev)
+  }, [])
+
+  const handleEditClick = useCallback(() => {
+    onEdit?.(item)
+  }, [item, onEdit])
+
+  const handleDeleteClick = useCallback(() => {
+    onDelete?.(item.id)
+  }, [item.id, onDelete])
+
+  // ✅ 計算値（メモ化）
+  const expiryStatus = useMemo(() => {
+    return calculateExpiryStatus({
+      expiryDate: item.expiryDate,
+      currentDate: new Date()
+    })
+  }, [item.expiryDate])
+
+  const cardClasses = useMemo(() => {
+    return [
+      'inventory-item-card',
+      className,
+      isSelected && 'selected',
+      isHovered && 'hovered',
+      expiryStatus === 'EXPIRED' && 'expired'
+    ].filter(Boolean).join(' ')
+  }, [className, isSelected, isHovered, expiryStatus])
+
+  return (
+    <div
+      className={cardClasses}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div className="card-header">
+        <h3 className="item-name">{item.name}</h3>
+        <ExpiryStatusBadge status={expiryStatus} />
+      </div>
+      
+      <div className="card-body">
+        <p className="quantity">
+          数量: {item.quantity} {item.unit}
+        </p>
+        
+        {isExpanded && (
+          <div className="expanded-details">
+            {item.brand && <p>ブランド: {item.brand}</p>}
+            {item.storageLocation && <p>保管場所: {item.storageLocation}</p>}
+            {item.notes && <p>メモ: {item.notes}</p>}
+          </div>
+        )}
+      </div>
+      
+      <div className="card-actions">
+        <button 
+          type="button"
+          onClick={handleExpandToggle}
+          className="expand-button"
+        >
+          {isExpanded ? '折りたたむ' : '詳細を見る'}
+        </button>
+        
+        {onEdit && (
+          <button
+            type="button"
+            onClick={handleEditClick}
+            className="edit-button"
+          >
+            編集
+          </button>
+        )}
+        
+        {onDelete && (
+          <button
+            type="button"
+            onClick={handleDeleteClick}
+            className="delete-button"
+          >
+            削除
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+### React Custom Hook規約
+
+```typescript
+// ✅ 良い例: useプレフィックス + camelCase
+export const useInventoryItems = (organizationId: OrganizationId) => {
+  const [items, setItems] = useState<ReadonlyArray<InventoryItem>>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+
+  const fetchItems = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      const response = await inventoryApi.getItems({ organizationId })
+      if (response.isOk()) {
+        setItems(response.value)
+      } else {
+        setError(new Error(response.error))
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error'))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [organizationId])
+
+  useEffect(() => {
+    fetchItems()
+  }, [fetchItems])
+
+  return { items, isLoading, error, refetch: fetchItems }
+}
+
+export const useExpiryStatus = (item: InventoryItem) => {
+  return useMemo(() => {
+    return calculateExpiryStatus({
+      expiryDate: item.expiryDate,
+      currentDate: new Date()
+    })
+  }, [item.expiryDate])
+}
+
+export const useFormValidation = <T>(
+  initialValues: T,
+  validationSchema: z.ZodSchema<T>
+) => {
+  const [values, setValues] = useState<T>(initialValues)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
+
+  const validateField = useCallback((fieldName: string, value: unknown) => {
+    try {
+      validationSchema.pick({ [fieldName]: true }).parse({ [fieldName]: value })
+      setErrors(prev => {
+        const newErrors = { ...prev }
+        delete newErrors[fieldName]
+        return newErrors
+      })
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        setErrors(prev => ({
+          ...prev,
+          [fieldName]: error.errors[0]?.message || 'Invalid value'
+        }))
+      }
+    }
+  }, [validationSchema])
+
+  const updateField = useCallback((fieldName: string, value: unknown) => {
+    setValues(prev => ({ ...prev, [fieldName]: value }))
+    setTouchedFields(prev => new Set(prev).add(fieldName))
+    validateField(fieldName, value)
+  }, [validateField])
+
+  const isValid = useMemo(() => {
+    return Object.keys(errors).length === 0
+  }, [errors])
+
+  return {
+    values,
+    errors,
+    touchedFields,
+    isValid,
+    updateField,
+    setValues,
+    reset: () => {
+      setValues(initialValues)
+      setErrors({})
+      setTouchedFields(new Set())
+    }
+  }
+}
+
+export const useLocalStorage = <T>(key: string, defaultValue: T) => {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const item = localStorage.getItem(key)
+      return item ? JSON.parse(item) : defaultValue
+    } catch {
+      return defaultValue
+    }
+  })
+
+  const setStoredValue = useCallback((newValue: T | ((prevValue: T) => T)) => {
+    setValue(prev => {
+      const valueToStore = typeof newValue === 'function' 
+        ? (newValue as (prevValue: T) => T)(prev)
+        : newValue
+
+      try {
+        localStorage.setItem(key, JSON.stringify(valueToStore))
+      } catch (error) {
+        console.error(`Error storing value in localStorage:`, error)
+      }
+
+      return valueToStore
+    })
+  }, [key])
+
+  return [value, setStoredValue] as const
+}
+
+export const useDebounce = <T>(value: T, delay: number): T => {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => {
+      clearTimeout(handler)
+    }
+  }, [value, delay])
+
+  return debouncedValue
+}
+
+// ❌ 悪い例: useプレフィックスなし・PascalCase使用
+export const InventoryItems = (organizationId: string) => {  // ❌ useプレフィックスなし・PascalCase
+  // フック実装
+}
+
+export const getExpiryStatus = (item: InventoryItem) => {     // ❌ useプレフィックスなし
+  // フック実装
+}
+
+export const FormValidation = () => {                        // ❌ useプレフィックスなし・PascalCase
+  // フック実装
+}
+
+export const localStorage_hook = () => {                     // ❌ snake_case
+  // フック実装
+}
+
+export const UseDebounce = () => {                          // ❌ PascalCase
+  // フック実装
+}
+```
+
 ## Flutter/Dart コード規約
 
 ### ファイル・ディレクトリ命名規則
@@ -1106,100 +1506,90 @@ class InventoryItem extends Equatable {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
-  }
+## Hono RPC 規約
 
-  @override
-  List<Object?> get props => [
-        id,
-        organizationId,
-        name,
-        brand,
-        category,
-        quantity,
-        unit,
-        minQuantity,
-        expiryDate,
-        bestBeforeDate,
-        expiryType,
-        storageLocation,
-        price,
-        barcode,
-        asin,
-        tags,
-        images,
-        notes,
-        createdAt,
-        updatedAt,
-      ];
-}
-```
+### Zodスキーマ定義規約
 
-### Riverpod プロバイダー規約
+```typescript
+// ✅ 良い例: 明確な命名とコメント
+import { z } from 'zod';
 
-```dart
-// ✅ 良い例: Riverpod プロバイダー定義
-// リポジトリプロバイダー
-final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
-  final grpcClient = ref.read(grpcClientProvider);
-  final authToken = ref.read(authTokenProvider);
-  return InventoryRepositoryImpl(grpcClient, authToken);
+// 備蓄品エンティティスキーマ
+// 備蓄品の完全な情報を表現
+export const InventoryItemSchema = z.object({
+  id: z.string().describe('備蓄品ID'),
+  organizationId: z.string().describe('組織ID'),
+  name: z.string().min(1).max(100).describe('商品名'),
+  brand: z.string().optional().describe('ブランド名（オプション）'),
+  category: InventoryCategorySchema.describe('カテゴリ'),
+  quantity: z.number().min(0).describe('数量'),
+  unit: z.string().min(1).describe('単位'),
+  minQuantity: z.number().min(0).optional().describe('最小在庫数（オプション）'),
+  expiryDate: z.date().optional().describe('消費期限（オプション）'),
+  bestBeforeDate: z.date().optional().describe('賞味期限（オプション）'),
+  expiryType: ExpiryTypeSchema.describe('期限タイプ'),
+  storageLocation: z.string().optional().describe('保管場所（オプション）'),
+  price: MoneySchema.optional().describe('価格（オプション）'),
+  barcode: z.string().optional().describe('バーコード（オプション）'),
+  asin: z.string().optional().describe('ASIN（オプション）'),
+  tags: z.array(z.string()).default([]).describe('タグ'),
+  images: z.array(z.string()).default([]).describe('画像URL'),
+  notes: z.string().optional().describe('メモ（オプション）'),
+  createdBy: z.string().describe('作成者ID'),
+  updatedBy: z.string().describe('更新者ID'),
+  createdAt: z.date().describe('作成日時'),
+  updatedAt: z.date().describe('更新日時'),
 });
 
-// ユースケースプロバイダー
-final getInventoryItemsUseCaseProvider = Provider<GetInventoryItems>((ref) {
-  final repository = ref.read(inventoryRepositoryProvider);
-  return GetInventoryItems(repository);
+// 備蓄品作成リクエストスキーマ
+export const CreateItemRequestSchema = z.object({
+  organizationId: z.string().describe('組織ID（必須）'),
+  name: z.string().min(1).max(100).describe('商品名（必須）'),
+  brand: z.string().optional().describe('ブランド名'),
+  category: InventoryCategorySchema.describe('カテゴリ（必須）'),
+  quantity: z.number().min(0).describe('数量（必須）'),
+  unit: z.string().min(1).describe('単位（必須）'),
+  minQuantity: z.number().min(0).optional().describe('最小在庫数'),
+  expiryDate: z.date().optional().describe('消費期限'),
+  bestBeforeDate: z.date().optional().describe('賞味期限'),
+  expiryType: ExpiryTypeSchema.describe('期限タイプ（必須）'),
+  storageLocation: z.string().optional().describe('保管場所'),
+  price: MoneySchema.optional().describe('価格'),
+  barcode: z.string().optional().describe('バーコード'),
+  asin: z.string().optional().describe('ASIN'),
+  tags: z.array(z.string()).default([]).describe('タグ'),
+  notes: z.string().optional().describe('メモ'),
 });
 
-// 状態プロバイダー（FutureProvider）
-final inventoryItemsProvider = FutureProvider.family<List<InventoryItem>, String>(
-  (ref, organizationId) async {
-    final useCase = ref.read(getInventoryItemsUseCaseProvider);
-    return await useCase(organizationId);
-  },
-);
+// カスタムバリデーション例
+export const CreateItemRequestWithValidationSchema = CreateItemRequestSchema
+  .refine(
+    (data) => {
+      // 消費期限タイプの場合は消費期限が必須
+      if (data.expiryType === 'EXPIRY' && !data.expiryDate) {
+        return false;
+      }
+      // 賞味期限タイプの場合は賞味期限が必須
+      if (data.expiryType === 'BEST_BEFORE' && !data.bestBeforeDate) {
+        return false;
+      }
+      // 両方タイプの場合は両方必須
+      if (data.expiryType === 'BOTH' && (!data.expiryDate || !data.bestBeforeDate)) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'Expiry date is required based on expiry type',
+      path: ['expiryDate'],
+    }
+  );
 
-// 状態プロバイダー（StateProvider）
-final selectedInventoryItemProvider = StateProvider<InventoryItem?>(
-  (ref) => null,
-);
-
-// 検索・フィルタリングプロバイダー
-final inventorySearchQueryProvider = StateProvider<String>((ref) => '');
-
-final filteredInventoryItemsProvider = Provider<AsyncValue<List<InventoryItem>>>(
-  (ref) {
-    final itemsAsync = ref.watch(inventoryItemsProvider('current_org_id'));
-    final searchQuery = ref.watch(inventorySearchQueryProvider);
-    
-    return itemsAsync.when(
-      data: (items) {
-        if (searchQuery.isEmpty) {
-          return AsyncValue.data(items);
-        }
-        
-        final filtered = items.where((item) =>
-          item.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          (item.brand?.toLowerCase().contains(searchQuery.toLowerCase()) ?? false)
-        ).toList();
-        
-        return AsyncValue.data(filtered);
-      },
-      loading: () => const AsyncValue.loading(),
-      error: (error, stack) => AsyncValue.error(error, stack),
-    );
-  },
-);
-
-// ❌ 悪い例: 複雑すぎるプロバイダー
-final complexProvider = Provider((ref) {
-  // 複数の責任を持つプロバイダー（単一責任原則違反）
-  final data = ref.watch(someDataProvider);
-  final user = ref.watch(userProvider);
-  final settings = ref.watch(settingsProvider);
-  
-  // 複雑なロジック（ここに書くべきではない）
-  return processComplexLogic(data, user, settings);
+// ❌ 悪い例: 曖昧な命名とバリデーション不足
+const BadItemSchema = z.object({
+  id: z.string(),
+  data: z.any(),
+  stuff: z.array(z.string()),
 });
 ```
 
@@ -2505,6 +2895,8 @@ export class BadInventoryService {
 - **変数名・関数名はcamelCase、クラス・型名はPascalCase**
 - **関数名・メソッド名は動詞で始める（action-oriented naming）**
 - **boolean変数は`is`、`has`、`can`、`should`、`will`などの接頭語を使用**
+- **ReactコンポーネントはPascalCase + named export（default export禁止）**
+- **Custom Hookはuseプレフィックス + camelCase**
 - **インターフェースは具体名、`I`プレフィックス・`***Interface`接尾辞禁止**
 - **Enumは避けUnion型で表現、配列は`ReadonlyArray`推奨**
 - **`interface`より`type`を優先、`type-fest`活用で複雑な型を簡潔に**
