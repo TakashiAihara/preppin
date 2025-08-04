@@ -29,6 +29,9 @@
 - すべての機能にテストを必須
 - テストファーストの開発アプローチ
 - 単体テスト・統合テスト・E2Eテストの3層構造
+- **テストファイル命名規則**:
+  - `*.spec.ts` - 単体テスト（モック使用、単独機能テスト）
+  - `*.test.ts` - 結合テスト（モック最小限、実際の依存関係使用）
 
 ## TypeScript コード規約
 
@@ -1079,10 +1082,30 @@ export class CreateInventoryItemUseCase {
 
 ## テスト規約
 
-### 単体テスト規約（Given-When-Then + Rails風ネスト構造 + 1 expect per it）
+### テストファイル命名規則
 
 ```typescript
-// ✅ 良い例: Given-When-Then形式 + 1つのitに1つのexpect (RSpec風)
+// ✅ 単体テスト: *.spec.ts
+// - モックを積極的に使用
+// - 単一クラス/関数の振る舞いをテスト
+// - 外部依存を全てモック化
+inventory-item.entity.spec.ts
+create-inventory-item.usecase.spec.ts
+inventory.repository.spec.ts
+
+// ✅ 結合テスト: *.test.ts  
+// - モックは最小限（外部API、データベースのみ）
+// - 複数コンポーネントの連携をテスト
+// - 実際の依存関係を使用
+inventory-service.test.ts
+inventory-grpc.test.ts
+create-item-flow.test.ts
+```
+
+### 単体テスト規約（*.spec.ts - モック使用）
+
+```typescript
+// ✅ 良い例: inventory-item.entity.spec.ts - 単体テスト with モック
 describe('InventoryItem', () => {
   describe('Given valid props', () => {
     const props: CreateInventoryItemProps = {
@@ -1235,6 +1258,139 @@ const createTestInventoryItem = (overrides: Partial<CreateInventoryItemProps> = 
   
   return result.value
 }
+```
+
+### 結合テスト規約（*.test.ts - モック最小限）
+
+```typescript
+// ✅ 良い例: create-inventory-item.test.ts - 結合テスト（実際の依存関係使用）
+describe('CreateInventoryItem Integration', () => {
+  let inventoryRepository: InventoryRepository
+  let organizationRepository: OrganizationRepository
+  let eventBus: EventBus
+  let useCase: CreateInventoryItemUseCase
+  
+  beforeEach(() => {
+    // 実際のリポジトリ実装を使用（インメモリDB）
+    inventoryRepository = new InventoryRepositoryImpl(inMemoryDb)
+    organizationRepository = new OrganizationRepositoryImpl(inMemoryDb)
+    eventBus = new EventBusImpl()
+    
+    // UseCaseは実際の依存関係で初期化
+    useCase = new CreateInventoryItemUseCase(
+      inventoryRepository,
+      organizationRepository,
+      eventBus,
+      logger
+    )
+  })
+  
+  describe('Given valid organization and user permissions', () => {
+    let organization: Organization
+    let command: CreateInventoryItemCommand
+    
+    beforeEach(async () => {
+      // 実際にデータを作成
+      organization = await organizationRepository.save(
+        Organization.create({
+          name: 'Test Org',
+          ownerId: 'user-123'
+        })
+      )
+      
+      command = {
+        organizationId: organization.id,
+        userId: 'user-123',
+        name: 'Test Item',
+        category: InventoryCategory.FOOD,
+        quantity: 10,
+        unit: '個',
+      }
+    })
+    
+    describe('When creating inventory item', () => {
+      let result: Result<InventoryItemDto, CreateInventoryItemError>
+      
+      beforeEach(async () => {
+        result = await useCase.execute(command)
+      })
+      
+      describe('Then should create item in repository', () => {
+        it('returns ok result', () => {
+          expect(result.isOk()).toBe(true)
+        })
+        
+        it('persists item in repository', async () => {
+          const savedItem = await inventoryRepository.findById(result.value.id)
+          expect(savedItem).toBeDefined()
+        })
+        
+        it('publishes domain event', () => {
+          expect(eventBus.getPublishedEvents()).toHaveLength(1)
+        })
+        
+        it('creates item with correct data', async () => {
+          const savedItem = await inventoryRepository.findById(result.value.id)
+          expect(savedItem.name).toBe('Test Item')
+        })
+      })
+    })
+  })
+})
+
+// ❌ 悪い例: *.test.ts なのに過度なモック使用
+describe('Bad Integration Test', () => {
+  let mockRepo: jest.Mock  // 結合テストでモックを使いすぎ
+  let mockEventBus: jest.Mock
+  
+  beforeEach(() => {
+    mockRepo = jest.fn()
+    mockEventBus = jest.fn()
+    // これは単体テスト（*.spec.ts）でやるべき
+  })
+})
+```
+
+### 単体テスト vs 結合テストの使い分け
+
+```typescript
+// inventory-item.entity.spec.ts - 単体テスト
+describe('InventoryItem Entity Unit Test', () => {
+  // エンティティのビジネスロジックのみテスト
+  // 外部依存なし、モックなし
+})
+
+// inventory.repository.spec.ts - 単体テスト  
+describe('InventoryRepository Unit Test', () => {
+  let mockPrisma: DeepMockProxy<PrismaClient>
+  
+  beforeEach(() => {
+    mockPrisma = mockDeep<PrismaClient>()  // Prismaをモック
+  })
+  
+  // リポジトリのロジックのみテスト
+})
+
+// create-inventory-usecase.spec.ts - 単体テスト
+describe('CreateInventoryItemUseCase Unit Test', () => {
+  let mockInventoryRepo: jest.Mocked<InventoryRepository>
+  let mockOrgRepo: jest.Mocked<OrganizationRepository>
+  
+  beforeEach(() => {
+    // 全ての依存をモック化
+    mockInventoryRepo = createMock<InventoryRepository>()
+    mockOrgRepo = createMock<OrganizationRepository>()
+  })
+  
+  // UseCaseのオーケストレーションロジックのみテスト
+})
+
+// inventory-service.test.ts - 結合テスト
+describe('InventoryService Integration Test', () => {
+  // 実際のリポジトリ、UseCase、サービスを使用
+  // データベースはインメモリDBまたはテストコンテナ
+  // 外部APIのみモック
+})
 ```
 
 ### Flutter テスト規約（Given-When-Then + Rails風ネスト構造 + 1 expect per test）
@@ -1604,7 +1760,10 @@ export class BadInventoryService {
 1. **型安全性**: コンパイル時エラー検出、ランタイムエラー削減
 2. **簡潔性**: 最小限の記述量、セルフドキュメンティングコード
 3. **保守性**: 一貫したコード構造、理解しやすいアーキテクチャ
-4. **テスタビリティ**: Given-When-Then構造、Rails風ネストによる明確なテスト
+4. **テスタビリティ**: 
+   - Given-When-Then構造、Rails風ネストによる明確なテスト
+   - `*.spec.ts` = 単体テスト（モック使用）
+   - `*.test.ts` = 結合テスト（実依存関係使用）
 5. **パフォーマンス**: const + アロー関数、効率的なクエリ
 6. **セキュリティ**: 入力値検証、認証・認可、監査ログ
 7. **スケーラビリティ**: DDD/Clean Architectureによる拡張性
@@ -1616,5 +1775,7 @@ export class BadInventoryService {
 - **if文・switch文では必ずブロック`{}`を使用**
 - Given-When-Thenによる明確なテスト構造
 - **1つのitに1つのexpect（RSpec風）**
+- **`*.spec.ts` = 単体テスト（モック積極使用）**
+- **`*.test.ts` = 結合テスト（モック最小限）**
 
 すべての開発者がこの規約を遵守し、コードレビューで品質を担保することで、高品質で保守性の高い備蓄管理アプリケーションを構築できます。
