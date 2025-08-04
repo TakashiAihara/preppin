@@ -116,41 +116,314 @@ src/
         └── inventory.rest.ts           // ✅ 通信プロトコル区別として.rest.ts可
 ```
 
+### 命名規約
+
+```typescript
+// ✅ 良い例: 命名規約
+// 変数名・関数名: camelCase
+const inventoryItems = []
+const currentUser = {}
+const calculateExpiryDate = () => {}
+const getUserById = () => {}
+
+// クラス名: PascalCase
+class InventoryItem {}
+class UserAuthentication {}
+class OrganizationMember {}
+
+// 型名: PascalCase
+type UserId = Opaque<string, 'UserId'>
+type CreateInventoryItemRequest = {}
+type ExpiryStatus = 'EXPIRED' | 'CRITICAL' | 'WARNING' | 'CAUTION' | 'SAFE'
+
+// インターフェース: 具体的な名前、Iプレフィックス・***Interface接尾辞は禁止
+type InventoryRepository = {  // ✅ 具体的な名前
+  findById: (id: string) => Promise<InventoryItem | null>
+  save: (item: InventoryItem) => Promise<void>
+}
+
+type UserNotificationService = {  // ✅ 具体的な名前
+  sendEmail: (userId: string, message: string) => Promise<void>
+  sendPush: (userId: string, notification: PushNotification) => Promise<void>
+}
+
+// ❌ 悪い例: 曖昧な命名
+interface IRepository {}           // ❌ Iプレフィックス禁止
+interface RepositoryInterface {}   // ❌ ***Interface接尾辞禁止
+interface Repository {}            // ❌ 抽象的すぎる
+```
+
 ### 型定義規約
 
 ```typescript
-// ✅ 良い例: Opaque型による識別子の型安全性
-import { Opaque } from 'type-fest';
+// ✅ 良い例: Union型でEnum代替（推奨）
+export type ExpiryStatus = 'EXPIRED' | 'CRITICAL' | 'WARNING' | 'CAUTION' | 'SAFE' | 'NO_EXPIRY'
+export type InventoryCategory = 'FOOD' | 'MEDICINE' | 'DAILY_NECESSITIES' | 'EMERGENCY_SUPPLIES' | 'OTHER'
+export type UserRole = 'ADMIN' | 'EDITOR' | 'VIEWER'
+export type ExpiryType = 'EXPIRY_DATE' | 'BEST_BEFORE_DATE' | 'NO_EXPIRY'
 
-export type UserId = Opaque<string, 'UserId'>;
-export type OrganizationId = Opaque<string, 'OrganizationId'>;
-export type InventoryItemId = Opaque<string, 'InventoryItemId'>;
-
-// ✅ 良い例: 厳密な型定義
-export interface CreateInventoryItemRequest {
-  readonly name: string;
-  readonly brand?: string;
-  readonly category: InventoryCategory;
-  readonly quantity: number;
-  readonly unit: string;
-  readonly minQuantity?: number;
-  readonly expiryDate?: Date;
-  readonly bestBeforeDate?: Date;
-  readonly expiryType: ExpiryType;
-  readonly storageLocation?: string;
-  readonly price?: Money;
-  readonly barcode?: string;
-  readonly asin?: string;
-  readonly tags: readonly string[];
-  readonly notes?: string;
+// ReadonlyArray for immutable arrays
+export type CreateInventoryItemRequest = {
+  readonly name: string
+  readonly brand?: string
+  readonly category: InventoryCategory
+  readonly quantity: number
+  readonly unit: string
+  readonly minQuantity?: number
+  readonly expiryDate?: Date
+  readonly bestBeforeDate?: Date
+  readonly expiryType: ExpiryType
+  readonly storageLocation?: string
+  readonly price?: Money
+  readonly barcode?: string
+  readonly asin?: string
+  readonly tags: ReadonlyArray<string>        // ✅ ReadonlyArray for immutable data
+  readonly images: ReadonlyArray<string>      // ✅ ReadonlyArray for immutable data
+  readonly notes?: string
 }
 
-// ❌ 悪い例: 曖昧な型定義
-export interface CreateItemRequest {
-  name: any;
-  data: object;
-  options?: any;
+// type-fest活用で複雑な型定義を簡潔に
+import type { Opaque, RequireAtLeastOne, PartialDeep, SetOptional } from 'type-fest'
+
+export type UserId = Opaque<string, 'UserId'>
+export type OrganizationId = Opaque<string, 'OrganizationId'>
+export type InventoryItemId = Opaque<string, 'InventoryItemId'>
+
+// 関数引数の型は必ず抽出して定義
+export type CalculateExpiryStatusParams = {
+  readonly expiryDate: Date
+  readonly currentDate?: Date
 }
+
+export type CreateInventoryItemParams = {
+  readonly organizationId: OrganizationId
+  readonly userId: UserId
+  readonly name: string
+  readonly category: InventoryCategory
+  readonly quantity: number
+  readonly unit: string
+  readonly expiryType: ExpiryType
+  readonly tags?: ReadonlyArray<string>
+}
+
+export type UpdateInventoryItemParams = SetOptional<
+  CreateInventoryItemParams,
+  'organizationId' | 'userId'
+> & {
+  readonly id: InventoryItemId
+}
+
+// ✅ 良い例: typeを優先（interfaceより）
+export type InventoryRepository = {
+  findById: (id: InventoryItemId) => Promise<InventoryItem | null>
+  findByOrganization: (orgId: OrganizationId) => Promise<ReadonlyArray<InventoryItem>>
+  save: (item: InventoryItem) => Promise<void>
+  delete: (id: InventoryItemId) => Promise<void>
+}
+
+export type UserAuthenticationService = {
+  authenticate: (params: AuthenticateUserParams) => Promise<AuthenticationResult>
+  refreshToken: (params: RefreshTokenParams) => Promise<TokenPair>
+  revokeToken: (params: RevokeTokenParams) => Promise<void>
+}
+
+// RequireAtLeastOne for flexible parameters
+export type SearchInventoryItemsParams = RequireAtLeastOne<{
+  readonly name?: string
+  readonly category?: InventoryCategory
+  readonly barcode?: string
+  readonly tags?: ReadonlyArray<string>
+}, 'name' | 'category' | 'barcode' | 'tags'>
+
+// ❌ 悪い例: Enum使用（Union型を推奨）
+export enum BadExpiryStatus {  // ❌ Enumは避ける
+  EXPIRED = 'EXPIRED',
+  CRITICAL = 'CRITICAL',
+  WARNING = 'WARNING'
+}
+
+// ❌ 悪い例: 可変配列（ReadonlyArrayを使うべき）
+export type BadCreateRequest = {
+  tags: string[]              // ❌ 変更予期されない配列はReadonlyArrayで
+  images: Array<string>       // ❌ 変更予期されない配列はReadonlyArrayで
+}
+
+// ❌ 悪い例: interfaceの使用（typeを優先）
+export interface BadRepository {  // ❌ typeを優先
+  findById: (id: string) => Promise<any>
+}
+
+// ❌ 悪い例: 複雑な型定義（type-festを使うべき）
+export type BadComplexType = {
+  [K in keyof SomeType]: SomeType[K] extends string 
+    ? SomeType[K] | null 
+    : SomeType[K] extends number 
+    ? SomeType[K] | undefined 
+    : SomeType[K]
+}  // ✅ type-festのPartialDeepやSetOptionalを使うべき
+
+// ❌ 悪い例: 引数の型をインラインで定義
+export const badFunction = (
+  params: {  // ❌ 引数の型はextractして定義すべき
+    name: string
+    age: number
+    email?: string
+  }
+) => {}
+
+// ✅ 良い例: 型の組み合わせ（type-fest活用）
+export type BaseInventoryItem = {
+  readonly id: InventoryItemId
+  readonly organizationId: OrganizationId
+  readonly name: string
+  readonly category: InventoryCategory
+  readonly quantity: number
+  readonly unit: string
+  readonly createdAt: Date
+  readonly updatedAt: Date
+}
+
+export type InventoryItemWithExpiry = BaseInventoryItem & {
+  readonly expiryDate?: Date
+  readonly bestBeforeDate?: Date
+  readonly expiryType: ExpiryType
+}
+
+export type InventoryItemSummary = Pick<InventoryItemWithExpiry, 'id' | 'name' | 'quantity' | 'expiryDate'>
+export type CreateInventoryItemData = Omit<BaseInventoryItem, 'id' | 'createdAt' | 'updatedAt'>
+export type UpdateInventoryItemData = PartialDeep<CreateInventoryItemData> & {
+  readonly id: InventoryItemId
+}
+```
+
+### 環境変数規約（Zod型安全性）
+
+```typescript
+// ✅ 良い例: Zodによる環境変数の型安全な取得
+import { z } from 'zod'
+
+// 環境変数スキーマ定義
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.coerce.number().min(1).max(65535).default(3000),
+  DATABASE_URL: z.string().url(),
+  REDIS_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+  SMTP_HOST: z.string(),
+  SMTP_PORT: z.coerce.number().min(1).max(65535),
+  SMTP_USER: z.string().email(),
+  SMTP_PASSWORD: z.string(),
+  AWS_REGION: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  SENTRY_DSN: z.string().url().optional(),
+  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
+  CORS_ORIGIN: z.string().or(z.array(z.string())).default('*'),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000), // 15分
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
+})
+
+// 型推論でEnvironmentConfig型を自動生成
+export type EnvironmentConfig = z.infer<typeof envSchema>
+
+// 環境変数パース関数
+export const parseEnvironmentVariables = (): EnvironmentConfig => {
+  try {
+    return envSchema.parse(process.env)
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const missingVars = error.errors
+        .map(err => `${err.path.join('.')}: ${err.message}`)
+        .join('\n')
+      
+      throw new Error(`Invalid environment configuration:\n${missingVars}`)
+    }
+    throw error
+  }
+}
+
+// 設定オブジェクト（シングルトン）
+export const config = parseEnvironmentVariables()
+
+// 使用例
+export const createDatabaseConnection = () => {
+  return createConnection({
+    url: config.DATABASE_URL,  // ✅ 型安全でバリデーション済み
+    ssl: config.NODE_ENV === 'production'
+  })
+}
+
+export const createJwtService = () => {
+  return new JwtService({
+    secret: config.JWT_SECRET,           // ✅ 型安全、最小長チェック済み
+    expiresIn: config.JWT_EXPIRES_IN,    // ✅ 型安全
+  })
+}
+
+// アプリケーション層での使用例
+export const createEmailService = (): EmailService => {
+  return new SmtpEmailService({
+    host: config.SMTP_HOST,              // ✅ 型安全
+    port: config.SMTP_PORT,              // ✅ 型安全、数値型保証
+    user: config.SMTP_USER,              // ✅ 型安全、email形式検証済み
+    password: config.SMTP_PASSWORD,      // ✅ 型安全
+  })
+}
+
+// 開発環境固有の設定
+export const isDevelopment = config.NODE_ENV === 'development'
+export const isProduction = config.NODE_ENV === 'production'
+export const isTest = config.NODE_ENV === 'test'
+
+// ❌ 悪い例: 生の環境変数アクセス（型安全性なし）
+const badDatabaseUrl = process.env.DATABASE_URL  // ❌ string | undefined、バリデーションなし
+const badPort = process.env.PORT                 // ❌ string | undefined、数値変換なし
+const badJwtSecret = process.env.JWT_SECRET      // ❌ undefined可能性、長さチェックなし
+
+// ❌ 悪い例: 実行時の型変換エラーリスク
+const veryBadPort = parseInt(process.env.PORT!)  // ❌ NaN可能性、型安全性なし
+const veryBadCorsOrigin = JSON.parse(process.env.CORS_ORIGIN || '[]')  // ❌ 解析エラーリスク
+
+// ✅ 良い例: 環境別設定ファイル分割
+// config/development.ts
+export const developmentEnvSchema = envSchema.extend({
+  DEBUG_SQL: z.coerce.boolean().default(true),
+  HOT_RELOAD: z.coerce.boolean().default(true),
+  API_DOCS_ENABLED: z.coerce.boolean().default(true),
+})
+
+// config/production.ts  
+export const productionEnvSchema = envSchema.extend({
+  HTTPS_ONLY: z.coerce.boolean().default(true),
+  TRUST_PROXY: z.coerce.boolean().default(true),
+  COMPRESSION_ENABLED: z.coerce.boolean().default(true),
+  CLUSTER_WORKERS: z.coerce.number().min(1).default(4),
+})
+
+// config/test.ts
+export const testEnvSchema = envSchema.extend({
+  TEST_DATABASE_URL: z.string().url(),
+  PARALLEL_TESTS: z.coerce.boolean().default(true),
+  TEST_TIMEOUT: z.coerce.number().default(30000),
+})
+
+// 環境に応じたスキーマ選択
+const getEnvSchema = () => {
+  switch (process.env.NODE_ENV) {
+    case 'development':
+      return developmentEnvSchema
+    case 'production':
+      return productionEnvSchema
+    case 'test':
+      return testEnvSchema
+    default:
+      return envSchema
+  }
+}
+
+export const environmentConfig = getEnvSchema().parse(process.env)
 ```
 
 ### エラーハンドリング規約
@@ -1990,6 +2263,11 @@ export class BadInventoryService {
 - **if文・switch文では必ずブロック`{}`を使用**
 - **`then`チェーンは極力使わず、`async/await`で統一**
 - **ファイル名は必ずケバブケース、ディレクトリでレイヤー表現時は接尾辞不要**
+- **変数名・関数名はcamelCase、クラス・型名はPascalCase**
+- **インターフェースは具体名、`I`プレフィックス・`***Interface`接尾辞禁止**
+- **Enumは避けUnion型で表現、配列は`ReadonlyArray`推奨**
+- **`interface`より`type`を優先、`type-fest`活用で複雑な型を簡潔に**
+- **関数引数の型は抽出して定義、環境変数は`zod`で型安全に取得**
 - Given-When-Thenによる明確なテスト構造
 - **1つのitに1つのexpect（RSpec風）**
 - **`*.spec.ts` = 単体テスト（モック積極使用）**
