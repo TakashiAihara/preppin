@@ -24,6 +24,7 @@
 - コメントは最小限、型とシグネチャで意図を表現
 - セルフドキュメンティングコードを目指す
 - **ただし、if文やswitch文では必ずブロック`{}`を使用（可読性と安全性のため）**
+- **関数・メソッドは25行以内に必ず収める（可読性と保守性のため）**
 - **Production code内で`let`は極力使用しない（`const`優先）**
 - **分割代入を積極的に活用して記述量削減**
 - **関数の引数も分割代入で受け取り、扱いやすくする**
@@ -574,17 +575,14 @@ export const veryBadExample = () => {
 }
 ```
 
-### 関数定義規約（分割代入活用 + let最小化）
+### 関数定義規約（25行制限 + 分割代入活用 + let最小化）
 
 ```typescript
-// ✅ 良い例: 分割代入 + const のみ使用
+// ✅ 良い例: 25行以内 + 分割代入 + const のみ使用
 export const calculateExpiryStatus = ({
   expiryDate,
   currentDate = new Date()
-}: {
-  expiryDate: Date
-  currentDate?: Date
-}): ExpiryStatus => {
+}: CalculateExpiryStatusParams): ExpiryStatus => {
   const daysUntilExpiry = Math.ceil(
     (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
   )
@@ -602,7 +600,7 @@ export const calculateExpiryStatus = ({
     return 'CAUTION'
   }
   return 'SAFE'
-}
+} // ✅ 20行 - 25行以内でOK
 
 // 分割代入で複数の値を返す
 export const parseInventoryItem = (data: unknown) => {
@@ -673,17 +671,153 @@ export const badExample = (request: CreateRequest) => {
   return result
 }
 
-// ❌ 悪い例: function宣言（必要な場合以外は避ける）
-function calculateExpiryStatus(expiryDate: Date): ExpiryStatus {
-  // 冗長なコメント（型で表現できる）
-  const currentDate = new Date() // 現在日時を取得
-  const daysUntilExpiry = Math.ceil(
-    (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
-  );
-  // 期限切れチェック
-  if (daysUntilExpiry < 0) return 'EXPIRED';
-  // ...
-}
+// ❌ 悪い例: 25行を超える長大な関数
+export const badCreateInventoryItem = async (request: CreateRequest) => {
+  // 40行超えの長大な関数（悪い例）
+  let validationErrors = []
+  
+  // バリデーション処理（10行）
+  if (!request.name || request.name.trim().length === 0) {
+    validationErrors.push('Name is required')
+  }
+  if (request.quantity < 0) {
+    validationErrors.push('Quantity must be positive')
+  }
+  if (request.expiryType === 'EXPIRY' && !request.expiryDate) {
+    validationErrors.push('Expiry date required for expiry type')
+  }
+  
+  // 権限チェック処理（8行）
+  const user = await getUserById(request.userId)
+  if (!user) {
+    throw new Error('User not found')
+  }
+  const organization = await getOrganizationById(request.organizationId)
+  if (!organization.hasWritePermission(user.id)) {
+    throw new Error('Permission denied')
+  }
+  
+  // データベース保存処理（10行）
+  const item = new InventoryItem({
+    id: generateId(),
+    name: request.name.trim(),
+    quantity: request.quantity,
+    organizationId: request.organizationId,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  })
+  
+  await database.save(item)
+  
+  // 通知処理（8行）
+  const members = await getOrganizationMembers(request.organizationId)
+  for (const member of members) {
+    await sendNotification(member.id, {
+      type: 'ITEM_CREATED',
+      itemId: item.id,
+      itemName: item.name
+    })
+  }
+  
+  return item
+} // ❌ 45行超え - 25行制限違反
+
+// ✅ 良い例: 25行制限を守るために関数分割
+export const createInventoryItem = async ({
+  organizationId,
+  userId,
+  ...itemData
+}: CreateInventoryItemParams): Promise<Result<InventoryItem, CreateError>> => {
+  const validationResult = validateItemData(itemData)
+  if (validationResult.isErr()) {
+    return err('VALIDATION_ERROR')
+  }
+
+  const permissionResult = await checkCreatePermission({ organizationId, userId })
+  if (permissionResult.isErr()) {
+    return err('PERMISSION_DENIED')
+  }
+
+  const item = createItemEntity({ organizationId, ...itemData })
+  const saveResult = await saveInventoryItem(item)
+  if (saveResult.isErr()) {
+    return err('SAVE_FAILED')
+  }
+
+  await notifyOrganizationMembers({ organizationId, item })
+  return ok(item)
+} // ✅ 18行 - 25行以内でOK
+
+// 分割された小さな関数群（それぞれ25行以内）
+const validateItemData = (data: CreateItemData): Result<void, ValidationError> => {
+  if (!data.name?.trim()) {
+    return err(new ValidationError('Name is required'))
+  }
+  if (data.quantity < 0) {
+    return err(new ValidationError('Quantity must be positive'))
+  }
+  if (data.expiryType === 'EXPIRY' && !data.expiryDate) {
+    return err(new ValidationError('Expiry date required'))
+  }
+  return ok(undefined)
+} // ✅ 11行
+
+const checkCreatePermission = async ({
+  organizationId,
+  userId
+}: CheckPermissionParams): Promise<Result<void, PermissionError>> => {
+  const user = await userRepository.findById(userId)
+  if (!user) {
+    return err(new PermissionError('User not found'))
+  }
+  
+  const organization = await organizationRepository.findById(organizationId)
+  if (!organization?.hasWritePermission(userId)) {
+    return err(new PermissionError('Permission denied'))
+  }
+  
+  return ok(undefined)
+} // ✅ 13行
+
+const createItemEntity = (data: CreateItemEntityData): InventoryItem => {
+  return new InventoryItem({
+    id: InventoryItemId.generate(),
+    organizationId: data.organizationId,
+    name: data.name.trim(),
+    quantity: data.quantity,
+    unit: data.unit,
+    expiryType: data.expiryType,
+    expiryDate: data.expiryDate,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
+} // ✅ 12行
+
+const saveInventoryItem = async (
+  item: InventoryItem
+): Promise<Result<void, SaveError>> => {
+  try {
+    await inventoryRepository.save(item)
+    return ok(undefined)
+  } catch (error) {
+    logger.error('Failed to save inventory item', { error, itemId: item.id })
+    return err(new SaveError('Database save failed'))
+  }
+} // ✅ 8行
+
+const notifyOrganizationMembers = async ({
+  organizationId,
+  item
+}: NotifyMembersParams): Promise<void> => {
+  const members = await organizationRepository.getMembers(organizationId)
+  const notifications = members.map(member => ({
+    userId: member.id,
+    type: 'ITEM_CREATED' as const,
+    data: { itemId: item.id, itemName: item.name }
+  }))
+  
+  await notificationService.sendBatch(notifications)
+} // ✅ 9行
 
 // ✅ 良い例: DDD エンティティ
 export class InventoryItem {
@@ -2261,6 +2395,7 @@ export class BadInventoryService {
 - コメントより型とシグネチャで意図を表現
 - 記述量は最小限（パフォーマンス影響がない限り）
 - **if文・switch文では必ずブロック`{}`を使用**
+- **関数・メソッドは25行以内に必ず収める（長い場合は分割）**
 - **`then`チェーンは極力使わず、`async/await`で統一**
 - **ファイル名は必ずケバブケース、ディレクトリでレイヤー表現時は接尾辞不要**
 - **変数名・関数名はcamelCase、クラス・型名はPascalCase**
