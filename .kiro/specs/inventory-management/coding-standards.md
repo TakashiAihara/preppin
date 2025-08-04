@@ -1,0 +1,1549 @@
+# コード規約・開発標準
+
+## 概要
+
+備蓄管理アプリケーションの開発における統一されたコード規約とベストプラクティス。Flutter、TypeScript、gRPC、DDD/Clean Architectureに対応した包括的な開発標準。
+
+## 全般的な原則
+
+### 1. 型安全性ファースト
+- すべてのコードで型安全性を最優先
+- `any`型の使用禁止（やむを得ない場合は`unknown`を使用）
+- Protocol Buffersによる厳密な型定義
+- Dartでの`dynamic`型使用最小化
+
+### 2. 関数型プログラミング指向
+- イミュータブルなデータ構造を優先
+- 副作用の最小化
+- 純粋関数の推奨
+- Result型（neverthrow）によるエラーハンドリング
+
+### 3. テスト駆動開発（TDD）
+- すべての機能にテストを必須
+- テストファーストの開発アプローチ
+- 単体テスト・統合テスト・E2Eテストの3層構造
+
+## TypeScript コード規約
+
+### ファイル・ディレクトリ命名規則
+
+```typescript
+// ✅ 良い例
+// ファイル名: kebab-case
+inventory-item.service.ts
+user-authentication.controller.ts
+organization-member.entity.ts
+
+// ディレクトリ名: kebab-case
+src/
+├── domain/
+│   ├── inventory-items/
+│   ├── user-management/
+│   └── organization-management/
+├── infrastructure/
+│   ├── database/
+│   └── external-apis/
+└── application/
+    ├── use-cases/
+    └── services/
+```
+
+### 型定義規約
+
+```typescript
+// ✅ 良い例: Opaque型による識別子の型安全性
+import { Opaque } from 'type-fest';
+
+export type UserId = Opaque<string, 'UserId'>;
+export type OrganizationId = Opaque<string, 'OrganizationId'>;
+export type InventoryItemId = Opaque<string, 'InventoryItemId'>;
+
+// ✅ 良い例: 厳密な型定義
+export interface CreateInventoryItemRequest {
+  readonly name: string;
+  readonly brand?: string;
+  readonly category: InventoryCategory;
+  readonly quantity: number;
+  readonly unit: string;
+  readonly minQuantity?: number;
+  readonly expiryDate?: Date;
+  readonly bestBeforeDate?: Date;
+  readonly expiryType: ExpiryType;
+  readonly storageLocation?: string;
+  readonly price?: Money;
+  readonly barcode?: string;
+  readonly asin?: string;
+  readonly tags: readonly string[];
+  readonly notes?: string;
+}
+
+// ❌ 悪い例: 曖昧な型定義
+export interface CreateItemRequest {
+  name: any;
+  data: object;
+  options?: any;
+}
+```
+
+### エラーハンドリング規約
+
+```typescript
+// ✅ 良い例: neverthrow Result型の使用
+import { Result, ok, err } from 'neverthrow';
+
+export type CreateInventoryItemError = 
+  | 'VALIDATION_ERROR'
+  | 'PERMISSION_DENIED'
+  | 'ORGANIZATION_NOT_FOUND'
+  | 'DUPLICATE_BARCODE';
+
+export async function createInventoryItem(
+  request: CreateInventoryItemRequest
+): Promise<Result<InventoryItem, CreateInventoryItemError>> {
+  // バリデーション
+  const validationResult = validateCreateRequest(request);
+  if (validationResult.isErr()) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // ビジネスロジック実行
+  try {
+    const item = await inventoryRepository.create(request);
+    return ok(item);
+  } catch (error) {
+    if (error instanceof PermissionError) {
+      return err('PERMISSION_DENIED');
+    }
+    if (error instanceof DuplicateBarcodeError) {
+      return err('DUPLICATE_BARCODE');
+    }
+    throw error; // 予期しないエラーは再スロー
+  }
+}
+
+// ❌ 悪い例: 例外ベースのエラーハンドリング
+export async function createItem(request: any): Promise<any> {
+  try {
+    return await repository.create(request);
+  } catch (error) {
+    throw new Error('Something went wrong');
+  }
+}
+```
+
+### 関数・クラス定義規約
+
+```typescript
+// ✅ 良い例: 純粋関数の推奨
+export const calculateExpiryStatus = (
+  expiryDate: Date,
+  currentDate: Date = new Date()
+): ExpiryStatus => {
+  const daysUntilExpiry = Math.ceil(
+    (expiryDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (daysUntilExpiry < 0) return 'EXPIRED';
+  if (daysUntilExpiry <= 3) return 'CRITICAL';
+  if (daysUntilExpiry <= 7) return 'WARNING';
+  if (daysUntilExpiry <= 30) return 'CAUTION';
+  return 'SAFE';
+};
+
+// ✅ 良い例: DDD エンティティ
+export class InventoryItem {
+  private constructor(
+    private readonly _id: InventoryItemId,
+    private readonly _organizationId: OrganizationId,
+    private _name: string,
+    private _quantity: number,
+    private readonly _unit: string,
+    private _expiryDate?: Date,
+    private _bestBeforeDate?: Date,
+    private readonly _expiryType: ExpiryType,
+    private readonly _createdAt: Date,
+    private _updatedAt: Date
+  ) {}
+
+  public static create(props: CreateInventoryItemProps): Result<InventoryItem, ValidationError> {
+    // バリデーション
+    if (props.name.trim().length === 0) {
+      return err(new ValidationError('Name cannot be empty'));
+    }
+    if (props.quantity < 0) {
+      return err(new ValidationError('Quantity cannot be negative'));
+    }
+
+    return ok(new InventoryItem(
+      props.id,
+      props.organizationId,
+      props.name.trim(),
+      props.quantity,
+      props.unit,
+      props.expiryDate,
+      props.bestBeforeDate,
+      props.expiryType,
+      new Date(),
+      new Date()
+    ));
+  }
+
+  // ゲッター（読み取り専用）
+  public get id(): InventoryItemId { return this._id; }
+  public get name(): string { return this._name; }
+  public get quantity(): number { return this._quantity; }
+
+  // ビジネスロジック
+  public consume(amount: number): Result<void, ConsumeError> {
+    if (amount <= 0) {
+      return err(new ConsumeError('Amount must be positive'));
+    }
+    if (amount > this._quantity) {
+      return err(new ConsumeError('Insufficient quantity'));
+    }
+
+    this._quantity -= amount;
+    this._updatedAt = new Date();
+    return ok(undefined);
+  }
+
+  public getExpiryStatus(currentDate: Date = new Date()): ExpiryStatus {
+    return calculateExpiryStatus(this._expiryDate || this._bestBeforeDate!, currentDate);
+  }
+}
+```
+
+### インポート規約
+
+```typescript
+// ✅ 良い例: インポート順序
+// 1. Node.js標準ライブラリ
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+
+// 2. 外部ライブラリ
+import { z } from 'zod';
+import { Result, ok, err } from 'neverthrow';
+import { Injectable } from '@nestjs/common';
+
+// 3. 内部パッケージ（@repo/）
+import { InventoryItem } from '@repo/shared-types';
+import { ValidationError } from '@repo/error-handling';
+
+// 4. 相対インポート（近い順）
+import { InventoryRepository } from '../repositories/inventory.repository';
+import { OrganizationService } from '../services/organization.service';
+import './inventory-item.entity';
+
+// ❌ 悪い例: 順序がバラバラ
+import { InventoryRepository } from '../repositories/inventory.repository';
+import { z } from 'zod';
+import { readFile } from 'fs/promises';
+import { InventoryItem } from '@repo/shared-types';
+```
+
+## Flutter/Dart コード規約
+
+### ファイル・ディレクトリ命名規則
+
+```dart
+// ✅ 良い例
+// ファイル名: snake_case
+inventory_item.dart
+user_authentication_service.dart
+organization_member_entity.dart
+
+// ディレクトリ名: snake_case
+lib/
+├── core/
+│   ├── constants/
+│   ├── errors/
+│   └── network/
+├── data/
+│   ├── datasources/
+│   ├── models/
+│   └── repositories/
+├── domain/
+│   ├── entities/
+│   ├── repositories/
+│   └── usecases/
+└── presentation/
+    ├── pages/
+    ├── widgets/
+    └── providers/
+```
+
+### クラス・関数定義規約
+
+```dart
+// ✅ 良い例: Clean Architecture エンティティ
+class InventoryItem extends Equatable {
+  const InventoryItem({
+    required this.id,
+    required this.organizationId,
+    required this.name,
+    required this.quantity,
+    required this.unit,
+    required this.expiryType,
+    required this.createdAt,
+    required this.updatedAt,
+    this.brand,
+    this.category = InventoryCategory.other,
+    this.minQuantity,
+    this.expiryDate,
+    this.bestBeforeDate,
+    this.storageLocation,
+    this.price,
+    this.barcode,
+    this.asin,
+    this.tags = const [],
+    this.images = const [],
+    this.notes,
+  });
+
+  final String id;
+  final String organizationId;
+  final String name;
+  final String? brand;
+  final InventoryCategory category;
+  final double quantity;
+  final String unit;
+  final double? minQuantity;
+  final DateTime? expiryDate;
+  final DateTime? bestBeforeDate;
+  final ExpiryType expiryType;
+  final String? storageLocation;
+  final Money? price;
+  final String? barcode;
+  final String? asin;
+  final List<String> tags;
+  final List<String> images;
+  final String? notes;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  // ビジネスロジック
+  ExpiryStatus getExpiryStatus([DateTime? currentDate]) {
+    final now = currentDate ?? DateTime.now();
+    final targetDate = expiryDate ?? bestBeforeDate;
+    
+    if (targetDate == null) return ExpiryStatus.noExpiry;
+    
+    final daysUntilExpiry = targetDate.difference(now).inDays;
+    
+    if (daysUntilExpiry < 0) return ExpiryStatus.expired;
+    if (daysUntilExpiry <= 3) return ExpiryStatus.critical;
+    if (daysUntilExpiry <= 7) return ExpiryStatus.warning;
+    if (daysUntilExpiry <= 30) return ExpiryStatus.caution;
+    return ExpiryStatus.safe;
+  }
+
+  bool get isLowStock => minQuantity != null && quantity <= minQuantity!;
+
+  // Copyメソッド
+  InventoryItem copyWith({
+    String? id,
+    String? organizationId,
+    String? name,
+    String? brand,
+    InventoryCategory? category,
+    double? quantity,
+    String? unit,
+    double? minQuantity,
+    DateTime? expiryDate,
+    DateTime? bestBeforeDate,
+    ExpiryType? expiryType,
+    String? storageLocation,
+    Money? price,
+    String? barcode,
+    String? asin,
+    List<String>? tags,
+    List<String>? images,
+    String? notes,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return InventoryItem(
+      id: id ?? this.id,
+      organizationId: organizationId ?? this.organizationId,
+      name: name ?? this.name,
+      brand: brand ?? this.brand,
+      category: category ?? this.category,
+      quantity: quantity ?? this.quantity,
+      unit: unit ?? this.unit,
+      minQuantity: minQuantity ?? this.minQuantity,
+      expiryDate: expiryDate ?? this.expiryDate,
+      bestBeforeDate: bestBeforeDate ?? this.bestBeforeDate,
+      expiryType: expiryType ?? this.expiryType,
+      storageLocation: storageLocation ?? this.storageLocation,
+      price: price ?? this.price,
+      barcode: barcode ?? this.barcode,
+      asin: asin ?? this.asin,
+      tags: tags ?? this.tags,
+      images: images ?? this.images,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+        id,
+        organizationId,
+        name,
+        brand,
+        category,
+        quantity,
+        unit,
+        minQuantity,
+        expiryDate,
+        bestBeforeDate,
+        expiryType,
+        storageLocation,
+        price,
+        barcode,
+        asin,
+        tags,
+        images,
+        notes,
+        createdAt,
+        updatedAt,
+      ];
+}
+```
+
+### Riverpod プロバイダー規約
+
+```dart
+// ✅ 良い例: Riverpod プロバイダー定義
+// リポジトリプロバイダー
+final inventoryRepositoryProvider = Provider<InventoryRepository>((ref) {
+  final grpcClient = ref.read(grpcClientProvider);
+  final authToken = ref.read(authTokenProvider);
+  return InventoryRepositoryImpl(grpcClient, authToken);
+});
+
+// ユースケースプロバイダー
+final getInventoryItemsUseCaseProvider = Provider<GetInventoryItems>((ref) {
+  final repository = ref.read(inventoryRepositoryProvider);
+  return GetInventoryItems(repository);
+});
+
+// 状態プロバイダー（FutureProvider）
+final inventoryItemsProvider = FutureProvider.family<List<InventoryItem>, String>(
+  (ref, organizationId) async {
+    final useCase = ref.read(getInventoryItemsUseCaseProvider);
+    return await useCase(organizationId);
+  },
+);
+
+// 状態プロバイダー（StateProvider）
+final selectedInventoryItemProvider = StateProvider<InventoryItem?>(
+  (ref) => null,
+);
+
+// 検索・フィルタリングプロバイダー
+final inventorySearchQueryProvider = StateProvider<String>((ref) => '');
+
+final filteredInventoryItemsProvider = Provider<AsyncValue<List<InventoryItem>>>(
+  (ref) {
+    final itemsAsync = ref.watch(inventoryItemsProvider('current_org_id'));
+    final searchQuery = ref.watch(inventorySearchQueryProvider);
+    
+    return itemsAsync.when(
+      data: (items) {
+        if (searchQuery.isEmpty) {
+          return AsyncValue.data(items);
+        }
+        
+        final filtered = items.where((item) =>
+          item.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          (item.brand?.toLowerCase().contains(searchQuery.toLowerCase()) ?? false)
+        ).toList();
+        
+        return AsyncValue.data(filtered);
+      },
+      loading: () => const AsyncValue.loading(),
+      error: (error, stack) => AsyncValue.error(error, stack),
+    );
+  },
+);
+
+// ❌ 悪い例: 複雑すぎるプロバイダー
+final complexProvider = Provider((ref) {
+  // 複数の責任を持つプロバイダー（単一責任原則違反）
+  final data = ref.watch(someDataProvider);
+  final user = ref.watch(userProvider);
+  final settings = ref.watch(settingsProvider);
+  
+  // 複雑なロジック（ここに書くべきではない）
+  return processComplexLogic(data, user, settings);
+});
+```
+
+### ウィジェット規約
+
+```dart
+// ✅ 良い例: 単一責任のウィジェット
+class InventoryItemCard extends ConsumerWidget {
+  const InventoryItemCard({
+    super.key,
+    required this.item,
+    this.onTap,
+    this.onConsume,
+    this.onEdit,
+  });
+
+  final InventoryItem item;
+  final VoidCallback? onTap;
+  final VoidCallback? onConsume;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final expiryStatus = item.getExpiryStatus();
+    
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(theme),
+              const SizedBox(height: 8),
+              _buildDetails(theme),
+              const SizedBox(height: 8),
+              _buildActions(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            item.name,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        ExpiryStatusBadge(status: item.getExpiryStatus()),
+      ],
+    );
+  }
+
+  Widget _buildDetails(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (item.brand != null)
+          Text(
+            item.brand!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        Text(
+          '${item.quantity} ${item.unit}',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (item.storageLocation != null)
+          Text(
+            '保管場所: ${item.storageLocation}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildActions() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        if (onConsume != null)
+          TextButton.icon(
+            onPressed: onConsume,
+            icon: const Icon(Icons.remove_circle_outline),
+            label: const Text('消費'),
+          ),
+        if (onEdit != null)
+          TextButton.icon(
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('編集'),
+          ),
+      ],
+    );
+  }
+}
+
+// ❌ 悪い例: 責任が多すぎるウィジェット
+class ComplexInventoryWidget extends StatefulWidget {
+  // 複数の責任を持つウィジェット
+  // - データ取得
+  // - 状態管理
+  // - UI表示
+  // - ビジネスロジック
+}
+```
+
+## gRPC・Protocol Buffers 規約
+
+### .proto ファイル規約
+
+```protobuf
+// ✅ 良い例: 明確な命名とコメント
+syntax = "proto3";
+
+package inventory.inventory;
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+option dart_package = "inventory_grpc";
+
+// 備蓄品管理サービス
+// 備蓄品のCRUD操作、検索、消費記録を提供
+service InventoryService {
+  // 備蓄品一覧取得
+  rpc ListItems(ListItemsRequest) returns (ListItemsResponse);
+  
+  // 備蓄品詳細取得
+  rpc GetItem(GetItemRequest) returns (InventoryItem);
+  
+  // 備蓄品作成
+  rpc CreateItem(CreateItemRequest) returns (InventoryItem);
+  
+  // 備蓄品更新
+  rpc UpdateItem(UpdateItemRequest) returns (InventoryItem);
+  
+  // 備蓄品削除
+  rpc DeleteItem(DeleteItemRequest) returns (common.Empty);
+  
+  // 備蓄品消費記録
+  rpc ConsumeItem(ConsumeItemRequest) returns (ConsumeItemResponse);
+  
+  // 備蓄品検索
+  rpc SearchItems(SearchItemsRequest) returns (SearchItemsResponse);
+  
+  // 期限切れ近商品取得
+  rpc GetExpiringItems(GetExpiringItemsRequest) returns (GetExpiringItemsResponse);
+}
+
+// 備蓄品エンティティ
+message InventoryItem {
+  string id = 1;                                    // 備蓄品ID
+  string organization_id = 2;                       // 組織ID
+  string name = 3;                                  // 商品名
+  string brand = 4;                                 // ブランド名（オプション）
+  common.InventoryCategory category = 5;            // カテゴリ
+  double quantity = 6;                              // 数量
+  string unit = 7;                                  // 単位
+  double min_quantity = 8;                          // 最小在庫数（オプション）
+  google.protobuf.Timestamp expiry_date = 9;        // 消費期限（オプション）
+  google.protobuf.Timestamp best_before_date = 10;  // 賞味期限（オプション）
+  common.ExpiryType expiry_type = 11;               // 期限タイプ
+  string storage_location = 12;                     // 保管場所（オプション）
+  common.Money price = 13;                          // 価格（オプション）
+  string barcode = 14;                              // バーコード（オプション）
+  string asin = 15;                                 // ASIN（オプション）
+  repeated string tags = 16;                        // タグ
+  repeated string images = 17;                      // 画像URL
+  string notes = 18;                                // メモ（オプション）
+  string created_by = 19;                           // 作成者ID
+  string updated_by = 20;                           // 更新者ID
+  google.protobuf.Timestamp created_at = 21;        // 作成日時
+  google.protobuf.Timestamp updated_at = 22;        // 更新日時
+}
+
+// 備蓄品作成リクエスト
+message CreateItemRequest {
+  string organization_id = 1;                       // 組織ID（必須）
+  string name = 2;                                  // 商品名（必須）
+  string brand = 3;                                 // ブランド名
+  common.InventoryCategory category = 4;            // カテゴリ（必須）
+  double quantity = 5;                              // 数量（必須）
+  string unit = 6;                                  // 単位（必須）
+  double min_quantity = 7;                          // 最小在庫数
+  google.protobuf.Timestamp expiry_date = 8;        // 消費期限
+  google.protobuf.Timestamp best_before_date = 9;   // 賞味期限
+  common.ExpiryType expiry_type = 10;               // 期限タイプ（必須）
+  string storage_location = 11;                     // 保管場所
+  common.Money price = 12;                          // 価格
+  string barcode = 13;                              // バーコード
+  string asin = 14;                                 // ASIN
+  repeated string tags = 15;                        // タグ
+  string notes = 16;                                // メモ
+}
+
+// ❌ 悪い例: 曖昧な命名とコメント不足
+message Item {
+  string id = 1;
+  string data = 2;
+  repeated string stuff = 3;
+}
+```
+
+### gRPC エラーハンドリング規約
+
+```typescript
+// ✅ 良い例: TypeScript gRPCサーバー
+import { status } from '@grpc/grpc-js';
+import { RpcException } from '@nestjs/microservices';
+
+@Injectable()
+export class InventoryGrpcService {
+  async createItem(request: CreateItemRequest): Promise<InventoryItem> {
+    try {
+      // バリデーション
+      const validationResult = await this.validateCreateRequest(request);
+      if (validationResult.isErr()) {
+        throw new RpcException({
+          code: status.INVALID_ARGUMENT,
+          message: 'Validation failed',
+          details: validationResult.error,
+        });
+      }
+
+      // 権限チェック
+      const hasPermission = await this.checkPermission(
+        request.organizationId,
+        context.userId,
+        'write'
+      );
+      if (!hasPermission) {
+        throw new RpcException({
+          code: status.PERMISSION_DENIED,
+          message: 'Insufficient permissions',
+        });
+      }
+
+      // ビジネスロジック実行
+      const result = await this.inventoryService.createItem(request);
+      return result.match(
+        (item) => item,
+        (error) => {
+          switch (error) {
+            case 'ORGANIZATION_NOT_FOUND':
+              throw new RpcException({
+                code: status.NOT_FOUND,
+                message: 'Organization not found',
+              });
+            case 'DUPLICATE_BARCODE':
+              throw new RpcException({
+                code: status.ALREADY_EXISTS,
+                message: 'Barcode already exists',
+              });
+            default:
+              throw new RpcException({
+                code: status.INTERNAL,
+                message: 'Internal server error',
+              });
+          }
+        }
+      );
+    } catch (error) {
+      if (error instanceof RpcException) {
+        throw error;
+      }
+      
+      // 予期しないエラー
+      this.logger.error('Unexpected error in createItem', error);
+      throw new RpcException({
+        code: status.INTERNAL,
+        message: 'Internal server error',
+      });
+    }
+  }
+}
+```
+
+```dart
+// ✅ 良い例: Flutter gRPCクライアント
+class InventoryRepositoryImpl implements InventoryRepository {
+  @override
+  Future<Either<InventoryFailure, InventoryItem>> createItem(
+    CreateInventoryItemRequest request,
+  ) async {
+    try {
+      final grpcRequest = _mapToGrpcRequest(request);
+      final response = await _grpcClient
+          .inventoryWithAuth(_authToken)
+          .createItem(grpcRequest);
+      
+      final item = InventoryItemModel.fromGrpc(response).toEntity();
+      return Right(item);
+    } on GrpcError catch (e) {
+      return Left(_mapGrpcErrorToFailure(e));
+    } catch (e) {
+      return Left(const InventoryFailure.unexpected());
+    }
+  }
+
+  InventoryFailure _mapGrpcErrorToFailure(GrpcError error) {
+    switch (error.code) {
+      case StatusCode.unauthenticated:
+        return const InventoryFailure.unauthenticated();
+      case StatusCode.permissionDenied:
+        return const InventoryFailure.permissionDenied();
+      case StatusCode.notFound:
+        return const InventoryFailure.organizationNotFound();
+      case StatusCode.invalidArgument:
+        return InventoryFailure.validationError(error.message ?? '');
+      case StatusCode.alreadyExists:
+        return const InventoryFailure.duplicateBarcode();
+      default:
+        return const InventoryFailure.serverError();
+    }
+  }
+}
+```
+
+## DDD/Clean Architecture 規約
+
+### ディレクトリ構造
+
+```
+src/
+├── domain/                     # ドメイン層
+│   ├── entities/              # エンティティ
+│   ├── value-objects/         # 値オブジェクト
+│   ├── aggregates/            # 集約
+│   ├── repositories/          # リポジトリインターフェース
+│   ├── services/              # ドメインサービス
+│   └── events/                # ドメインイベント
+├── application/               # アプリケーション層
+│   ├── use-cases/             # ユースケース
+│   ├── services/              # アプリケーションサービス
+│   ├── ports/                 # ポート（インターフェース）
+│   └── dto/                   # データ転送オブジェクト
+├── infrastructure/            # インフラ層
+│   ├── database/              # データベース実装
+│   ├── external-apis/         # 外部API実装
+│   ├── messaging/             # メッセージング実装
+│   └── repositories/          # リポジトリ実装
+└── presentation/              # プレゼンテーション層
+    ├── controllers/           # コントローラー
+    ├── grpc/                  # gRPCサービス
+    └── dto/                   # プレゼンテーション用DTO
+```
+
+### エンティティ規約
+
+```typescript
+// ✅ 良い例: DDD エンティティ
+export class InventoryItem {
+  private constructor(
+    private readonly _id: InventoryItemId,
+    private readonly _organizationId: OrganizationId,
+    private _props: InventoryItemProps,
+    private _createdAt: Date,
+    private _updatedAt: Date
+  ) {}
+
+  // ファクトリーメソッド
+  public static create(
+    props: CreateInventoryItemProps,
+    id?: InventoryItemId
+  ): Result<InventoryItem, ValidationError[]> {
+    const errors: ValidationError[] = [];
+
+    // バリデーション
+    if (props.name.trim().length === 0) {
+      errors.push(new ValidationError('Name cannot be empty'));
+    }
+    if (props.quantity < 0) {
+      errors.push(new ValidationError('Quantity cannot be negative'));
+    }
+    if (props.expiryType === ExpiryType.EXPIRY && !props.expiryDate) {
+      errors.push(new ValidationError('Expiry date is required for expiry type'));
+    }
+
+    if (errors.length > 0) {
+      return err(errors);
+    }
+
+    const itemId = id || InventoryItemId.generate();
+    const now = new Date();
+
+    return ok(new InventoryItem(
+      itemId,
+      props.organizationId,
+      {
+        name: props.name.trim(),
+        brand: props.brand?.trim(),
+        category: props.category,
+        quantity: props.quantity,
+        unit: props.unit,
+        minQuantity: props.minQuantity,
+        expiryDate: props.expiryDate,
+        bestBeforeDate: props.bestBeforeDate,
+        expiryType: props.expiryType,
+        storageLocation: props.storageLocation?.trim(),
+        price: props.price,
+        barcode: props.barcode,
+        asin: props.asin,
+        tags: [...props.tags],
+        images: [...props.images],
+        notes: props.notes?.trim(),
+      },
+      now,
+      now
+    ));
+  }
+
+  // 再構築メソッド（永続化からの復元用）
+  public static reconstitute(
+    id: InventoryItemId,
+    organizationId: OrganizationId,
+    props: InventoryItemProps,
+    createdAt: Date,
+    updatedAt: Date
+  ): InventoryItem {
+    return new InventoryItem(id, organizationId, props, createdAt, updatedAt);
+  }
+
+  // ゲッター
+  public get id(): InventoryItemId { return this._id; }
+  public get organizationId(): OrganizationId { return this._organizationId; }
+  public get name(): string { return this._props.name; }
+  public get quantity(): number { return this._props.quantity; }
+
+  // ビジネスロジック
+  public consume(amount: number, reason?: string): Result<ConsumptionRecord, ConsumeError> {
+    if (amount <= 0) {
+      return err(new ConsumeError('Amount must be positive'));
+    }
+    if (amount > this._props.quantity) {
+      return err(new ConsumeError('Insufficient quantity'));
+    }
+
+    this._props.quantity -= amount;
+    this._updatedAt = new Date();
+
+    // ドメインイベント発行
+    this.addDomainEvent(new InventoryItemConsumedEvent(
+      this._id,
+      this._organizationId,
+      amount,
+      reason,
+      new Date()
+    ));
+
+    return ok(new ConsumptionRecord(
+      ConsumptionRecordId.generate(),
+      this._id,
+      amount,
+      reason,
+      new Date()
+    ));
+  }
+
+  public updateQuantity(newQuantity: number): Result<void, ValidationError> {
+    if (newQuantity < 0) {
+      return err(new ValidationError('Quantity cannot be negative'));
+    }
+
+    this._props.quantity = newQuantity;
+    this._updatedAt = new Date();
+
+    return ok(undefined);
+  }
+
+  public getExpiryStatus(currentDate: Date = new Date()): ExpiryStatus {
+    const targetDate = this._props.expiryDate || this._props.bestBeforeDate;
+    if (!targetDate) return ExpiryStatus.NO_EXPIRY;
+
+    const daysUntilExpiry = Math.ceil(
+      (targetDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysUntilExpiry < 0) return ExpiryStatus.EXPIRED;
+    if (daysUntilExpiry <= 3) return ExpiryStatus.CRITICAL;
+    if (daysUntilExpiry <= 7) return ExpiryStatus.WARNING;
+    if (daysUntilExpiry <= 30) return ExpiryStatus.CAUTION;
+    return ExpiryStatus.SAFE;
+  }
+
+  public isLowStock(): boolean {
+    return this._props.minQuantity !== undefined && 
+           this._props.quantity <= this._props.minQuantity;
+  }
+}
+```
+
+### ユースケース規約
+
+```typescript
+// ✅ 良い例: ユースケース実装
+@Injectable()
+export class CreateInventoryItemUseCase {
+  constructor(
+    private readonly inventoryRepository: InventoryRepository,
+    private readonly organizationRepository: OrganizationRepository,
+    private readonly eventBus: EventBus,
+    private readonly logger: Logger
+  ) {}
+
+  async execute(
+    command: CreateInventoryItemCommand
+  ): Promise<Result<InventoryItemDto, CreateInventoryItemError>> {
+    try {
+      // 1. 権限チェック
+      const organization = await this.organizationRepository.findById(
+        command.organizationId
+      );
+      if (!organization) {
+        return err('ORGANIZATION_NOT_FOUND');
+      }
+
+      const hasPermission = organization.hasWritePermission(command.userId);
+      if (!hasPermission) {
+        return err('PERMISSION_DENIED');
+      }
+
+      // 2. バーコード重複チェック
+      if (command.barcode) {
+        const existingItem = await this.inventoryRepository.findByBarcode(
+          command.organizationId,
+          command.barcode
+        );
+        if (existingItem) {
+          return err('DUPLICATE_BARCODE');
+        }
+      }
+
+      // 3. エンティティ作成
+      const itemResult = InventoryItem.create({
+        organizationId: command.organizationId,
+        name: command.name,
+        brand: command.brand,
+        category: command.category,
+        quantity: command.quantity,
+        unit: command.unit,
+        minQuantity: command.minQuantity,
+        expiryDate: command.expiryDate,
+        bestBeforeDate: command.bestBeforeDate,
+        expiryType: command.expiryType,
+        storageLocation: command.storageLocation,
+        price: command.price,
+        barcode: command.barcode,
+        asin: command.asin,
+        tags: command.tags,
+        notes: command.notes,
+      });
+
+      if (itemResult.isErr()) {
+        return err('VALIDATION_ERROR');
+      }
+
+      const item = itemResult.value;
+
+      // 4. 永続化
+      await this.inventoryRepository.save(item);
+
+      // 5. ドメインイベント発行
+      await this.eventBus.publishAll(item.getDomainEvents());
+
+      // 6. DTOに変換して返却
+      const dto = InventoryItemDto.fromEntity(item);
+      
+      this.logger.log(`Inventory item created: ${item.id}`, {
+        itemId: item.id,
+        organizationId: command.organizationId,
+        userId: command.userId,
+      });
+
+      return ok(dto);
+    } catch (error) {
+      this.logger.error('Failed to create inventory item', error, {
+        command,
+      });
+      return err('INTERNAL_ERROR');
+    }
+  }
+}
+```
+
+## テスト規約
+
+### 単体テスト規約
+
+```typescript
+// ✅ 良い例: エンティティテスト
+describe('InventoryItem', () => {
+  describe('create', () => {
+    it('should create inventory item with valid props', () => {
+      // Arrange
+      const props: CreateInventoryItemProps = {
+        organizationId: OrganizationId.generate(),
+        name: 'Test Item',
+        category: InventoryCategory.FOOD,
+        quantity: 10,
+        unit: '個',
+        expiryType: ExpiryType.BEST_BEFORE,
+        bestBeforeDate: new Date('2024-12-31'),
+        tags: ['test', 'food'],
+      };
+
+      // Act
+      const result = InventoryItem.create(props);
+
+      // Assert
+      expect(result.isOk()).toBe(true);
+      const item = result.value;
+      expect(item.name).toBe('Test Item');
+      expect(item.quantity).toBe(10);
+      expect(item.tags).toEqual(['test', 'food']);
+    });
+
+    it('should return validation error for empty name', () => {
+      // Arrange
+      const props: CreateInventoryItemProps = {
+        organizationId: OrganizationId.generate(),
+        name: '',
+        category: InventoryCategory.FOOD,
+        quantity: 10,
+        unit: '個',
+        expiryType: ExpiryType.BEST_BEFORE,
+        tags: [],
+      };
+
+      // Act
+      const result = InventoryItem.create(props);
+
+      // Assert
+      expect(result.isErr()).toBe(true);
+      expect(result.error).toContainEqual(
+        expect.objectContaining({
+          message: 'Name cannot be empty',
+        })
+      );
+    });
+  });
+
+  describe('consume', () => {
+    it('should consume item and return consumption record', () => {
+      // Arrange
+      const item = createTestInventoryItem({ quantity: 10 });
+
+      // Act
+      const result = item.consume(3, 'Daily use');
+
+      // Assert
+      expect(result.isOk()).toBe(true);
+      expect(item.quantity).toBe(7);
+      
+      const record = result.value;
+      expect(record.amount).toBe(3);
+      expect(record.reason).toBe('Daily use');
+    });
+
+    it('should return error when consuming more than available', () => {
+      // Arrange
+      const item = createTestInventoryItem({ quantity: 5 });
+
+      // Act
+      const result = item.consume(10);
+
+      // Assert
+      expect(result.isErr()).toBe(true);
+      expect(result.error.message).toBe('Insufficient quantity');
+      expect(item.quantity).toBe(5); // 数量は変更されない
+    });
+  });
+});
+
+// テストヘルパー
+function createTestInventoryItem(overrides: Partial<CreateInventoryItemProps> = {}): InventoryItem {
+  const defaultProps: CreateInventoryItemProps = {
+    organizationId: OrganizationId.generate(),
+    name: 'Test Item',
+    category: InventoryCategory.FOOD,
+    quantity: 10,
+    unit: '個',
+    expiryType: ExpiryType.BEST_BEFORE,
+    tags: [],
+  };
+
+  const props = { ...defaultProps, ...overrides };
+  const result = InventoryItem.create(props);
+  
+  if (result.isErr()) {
+    throw new Error(`Failed to create test item: ${result.error}`);
+  }
+  
+  return result.value;
+}
+```
+
+### Flutter テスト規約
+
+```dart
+// ✅ 良い例: Flutter ウィジェットテスト
+void main() {
+  group('InventoryItemCard', () {
+    late InventoryItem testItem;
+
+    setUp(() {
+      testItem = const InventoryItem(
+        id: 'test-id',
+        organizationId: 'org-id',
+        name: 'Test Item',
+        quantity: 10,
+        unit: '個',
+        expiryType: ExpiryType.bestBefore,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+      );
+    });
+
+    testWidgets('should display item information correctly', (tester) async {
+      // Arrange
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryItemCard(item: testItem),
+          ),
+        ),
+      );
+
+      // Assert
+      expect(find.text('Test Item'), findsOneWidget);
+      expect(find.text('10 個'), findsOneWidget);
+    });
+
+    testWidgets('should call onTap when card is tapped', (tester) async {
+      // Arrange
+      bool wasTapped = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryItemCard(
+              item: testItem,
+              onTap: () => wasTapped = true,
+            ),
+          ),
+        ),
+      );
+
+      // Act
+      await tester.tap(find.byType(InventoryItemCard));
+      await tester.pumpAndSettle();
+
+      // Assert
+      expect(wasTapped, isTrue);
+    });
+
+    testWidgets('should show expiry status badge', (tester) async {
+      // Arrange
+      final expiringItem = testItem.copyWith(
+        expiryDate: DateTime.now().add(const Duration(days: 2)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: InventoryItemCard(item: expiringItem),
+          ),
+        ),
+      );
+
+      // Assert
+      expect(find.byType(ExpiryStatusBadge), findsOneWidget);
+    });
+  });
+}
+```
+
+## コミット・ブランチ規約
+
+### コミットメッセージ規約
+
+```bash
+# ✅ 良い例: Conventional Commits
+feat(inventory): add barcode scanning functionality
+fix(auth): resolve token refresh issue
+docs(api): update gRPC service documentation
+test(inventory): add unit tests for InventoryItem entity
+refactor(database): optimize inventory query performance
+chore(deps): update Flutter dependencies
+
+# 詳細な例
+feat(inventory): implement expiry date management
+
+- Add support for both expiry date and best-before date
+- Implement expiry status calculation logic
+- Add expiry alerts for items nearing expiration
+- Update UI to display appropriate expiry warnings
+
+Closes #123
+
+# ❌ 悪い例
+fix bug
+update code
+add feature
+```
+
+### ブランチ命名規約
+
+```bash
+# ✅ 良い例
+feature/inventory-barcode-scanning
+feature/auth-token-refresh
+fix/inventory-quantity-validation
+fix/grpc-connection-timeout
+hotfix/critical-auth-vulnerability
+release/v1.2.0
+chore/update-dependencies
+
+# ❌ 悪い例
+new-feature
+bug-fix
+temp
+test-branch
+```
+
+## パフォーマンス・セキュリティ規約
+
+### パフォーマンス規約
+
+```typescript
+// ✅ 良い例: 効率的なデータベースクエリ
+export class InventoryRepository {
+  async findItemsWithExpiry(
+    organizationId: OrganizationId,
+    days: number
+  ): Promise<InventoryItem[]> {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + days);
+
+    // インデックスを活用した効率的なクエリ
+    const items = await this.prisma.inventoryItem.findMany({
+      where: {
+        organizationId: organizationId.value,
+        OR: [
+          {
+            expiryDate: {
+              lte: futureDate,
+            },
+          },
+          {
+            bestBeforeDate: {
+              lte: futureDate,
+            },
+          },
+        ],
+      },
+      orderBy: [
+        { expiryDate: 'asc' },
+        { bestBeforeDate: 'asc' },
+      ],
+      // 必要なフィールドのみ選択
+      select: {
+        id: true,
+        name: true,
+        quantity: true,
+        unit: true,
+        expiryDate: true,
+        bestBeforeDate: true,
+        expiryType: true,
+      },
+    });
+
+    return items.map(item => this.toDomain(item));
+  }
+}
+
+// ❌ 悪い例: 非効率なクエリ
+export class BadInventoryRepository {
+  async findItemsWithExpiry(organizationId: string): Promise<any[]> {
+    // 全件取得してアプリケーション側でフィルタリング（非効率）
+    const allItems = await this.prisma.inventoryItem.findMany({
+      where: { organizationId },
+    });
+
+    return allItems.filter(item => {
+      // 複雑な計算をアプリケーション側で実行
+      const daysUntilExpiry = calculateDaysUntilExpiry(item);
+      return daysUntilExpiry <= 30;
+    });
+  }
+}
+```
+
+```dart
+// ✅ 良い例: Flutter パフォーマンス最適化
+class InventoryListWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final inventoryItems = ref.watch(inventoryItemsProvider);
+
+    return inventoryItems.when(
+      data: (items) => ListView.builder(
+        // パフォーマンス最適化
+        itemCount: items.length,
+        itemExtent: 120, // 固定高さでスクロール性能向上
+        cacheExtent: 1000, // キャッシュ範囲拡大
+        itemBuilder: (context, index) {
+          final item = items[index];
+          return InventoryItemCard(
+            key: ValueKey(item.id), // 効率的な再描画
+            item: item,
+            onTap: () => _navigateToDetail(context, item),
+          );
+        },
+      ),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => ErrorWidget(error),
+    );
+  }
+}
+
+// ❌ 悪い例: パフォーマンスを考慮しない実装
+class BadInventoryListWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: fetchAllItems(), // 毎回再取得
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return Column(
+            children: snapshot.data!.map((item) => 
+              ExpensiveWidget(item: item) // 重い処理を含むウィジェット
+            ).toList(),
+          );
+        }
+        return CircularProgressIndicator();
+      },
+    );
+  }
+}
+```
+
+### セキュリティ規約
+
+```typescript
+// ✅ 良い例: セキュアな実装
+@Injectable()
+export class InventoryGrpcService {
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(RateLimitInterceptor)
+  async createItem(
+    request: CreateItemRequest,
+    context: GrpcContext
+  ): Promise<InventoryItem> {
+    // 1. 入力値検証
+    const validationResult = await this.validateInput(request);
+    if (validationResult.isErr()) {
+      throw new RpcException({
+        code: status.INVALID_ARGUMENT,
+        message: 'Invalid input',
+      });
+    }
+
+    // 2. 認証・認可チェック
+    const userId = context.getUser().id;
+    const hasPermission = await this.authService.checkPermission(
+      userId,
+      request.organizationId,
+      'inventory:write'
+    );
+    
+    if (!hasPermission) {
+      // セキュリティログ記録
+      this.securityLogger.warn('Unauthorized inventory access attempt', {
+        userId,
+        organizationId: request.organizationId,
+        action: 'create_item',
+        ip: context.getClientIp(),
+      });
+      
+      throw new RpcException({
+        code: status.PERMISSION_DENIED,
+        message: 'Insufficient permissions',
+      });
+    }
+
+    // 3. 入力値サニタイゼーション
+    const sanitizedRequest = {
+      ...request,
+      name: this.sanitizer.sanitize(request.name),
+      notes: request.notes ? this.sanitizer.sanitize(request.notes) : undefined,
+    };
+
+    // 4. ビジネスロジック実行
+    const result = await this.inventoryService.createItem(sanitizedRequest);
+    
+    // 5. 監査ログ記録
+    this.auditLogger.info('Inventory item created', {
+      userId,
+      organizationId: request.organizationId,
+      itemId: result.id,
+      timestamp: new Date().toISOString(),
+    });
+
+    return result;
+  }
+
+  private async validateInput(request: CreateItemRequest): Promise<Result<void, ValidationError[]>> {
+    const schema = z.object({
+      organizationId: z.string().uuid(),
+      name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9\s\-_]+$/), // 安全な文字のみ
+      quantity: z.number().min(0).max(999999),
+      unit: z.string().min(1).max(20),
+      // その他のバリデーション
+    });
+
+    try {
+      schema.parse(request);
+      return ok(undefined);
+    } catch (error) {
+      return err([new ValidationError('Invalid input format')]);
+    }
+  }
+}
+
+// ❌ 悪い例: セキュリティを考慮しない実装
+@Injectable()
+export class BadInventoryService {
+  async createItem(request: any): Promise<any> {
+    // 入力値検証なし
+    // 認証・認可チェックなし
+    // SQLインジェクション脆弱性
+    const query = `INSERT INTO inventory_items (name, quantity) VALUES ('${request.name}', ${request.quantity})`;
+    return await this.database.query(query);
+  }
+}
+```
+
+## まとめ
+
+この規約に従うことで：
+
+1. **型安全性**: コンパイル時エラー検出、ランタイムエラー削減
+2. **保守性**: 一貫したコード構造、理解しやすいコード
+3. **テスタビリティ**: 単体テスト・統合テスト・E2Eテストの容易性
+4. **パフォーマンス**: 効率的なデータベースクエリ、UI最適化
+5. **セキュリティ**: 入力値検証、認証・認可、監査ログ
+6. **スケーラビリティ**: DDD/Clean Architectureによる拡張性
+
+すべての開発者がこの規約を遵守し、コードレビューで品質を担保することで、高品質な備蓄管理アプリケーションを構築できます。
